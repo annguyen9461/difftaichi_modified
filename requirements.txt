@@ -1,0 +1,8 @@
+taichi>=1.1.0
+matplotlib
+numpy
+opencv-python
+scipy
+imageio
+torch
+torchvision
