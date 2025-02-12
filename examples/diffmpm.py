@@ -349,12 +349,28 @@ def robot1(scene):
 
 def robot(scene):
     # scene.set_offset(0.1, 0.03)
-    scene.add_circle(0.3, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.7, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    
+    #ceiling
+    # scene.add_circle(0.3, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    # scene.add_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    # scene.add_circle(0.7, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+
+    #bottom row
     scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     scene.add_circle(0.4, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     scene.add_circle(0.3, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.2, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.1, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+
+    #bigger radius
+    scene.add_circle(0.1, 0.5, 0.2, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.1, 0.5, 0.3, -1, ptype=1)  # Add a dense, bouncy circle
+    # scene.add_circle(0.1, 0.5, 0.4, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
+    # scene.add_circle(0.1, 0.5, 0.5, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
+
+    #going up
+    scene.add_circle(0.3, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.3, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     scene.set_n_actuators(4)
 
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
