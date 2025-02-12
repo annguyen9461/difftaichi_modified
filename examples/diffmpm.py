@@ -283,18 +283,18 @@ class Scene:
                 self.n_particles += 1
                 self.n_solid_particles += int(ptype == 1)
     
-    def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
-        global n_particles
-        num_particles = int(2 * math.pi * radius / dx)
-        for i in range(num_particles):
-            angle = 2 * math.pi * i / num_particles
-            x_pos = center_x + radius * math.cos(angle) + self.offset_x
-            y_pos = center_y + radius * math.sin(angle) + self.offset_y
-            self.x.append([x_pos, y_pos])
-            self.actuator_id.append(actuation)
-            self.particle_type.append(ptype)
-            self.n_particles += 1
-            self.n_solid_particles += int(ptype == 1)
+    # def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
+    #     global n_particles
+    #     num_particles = int(2 * math.pi * radius / dx)
+    #     for i in range(num_particles):
+    #         angle = 2 * math.pi * i / num_particles
+    #         x_pos = center_x + radius * math.cos(angle) + self.offset_x
+    #         y_pos = center_y + radius * math.sin(angle) + self.offset_y
+    #         self.x.append([x_pos, y_pos])
+    #         self.actuator_id.append(actuation)
+    #         self.particle_type.append(ptype)
+    #         self.n_particles += 1
+    #         self.n_solid_particles += int(ptype == 1)
 
     def set_offset(self, x, y):
         self.offset_x = x
