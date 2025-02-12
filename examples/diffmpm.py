@@ -349,8 +349,12 @@ def robot1(scene):
 
 def robot(scene):
     # scene.set_offset(0.1, 0.03)
+    scene.add_circle(0.3, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.7, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(1.5, 1.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.4, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.3, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     scene.set_n_actuators(4)
 
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
