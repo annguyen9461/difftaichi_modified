@@ -282,6 +282,19 @@ class Scene:
                 self.particle_type.append(ptype)
                 self.n_particles += 1
                 self.n_solid_particles += int(ptype == 1)
+    
+    def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
+        global n_particles
+        num_particles = int(2 * math.pi * radius / dx)
+        for i in range(num_particles):
+            angle = 2 * math.pi * i / num_particles
+            x_pos = center_x + radius * math.cos(angle) + self.offset_x
+            y_pos = center_y + radius * math.sin(angle) + self.offset_y
+            self.x.append([x_pos, y_pos])
+            self.actuator_id.append(actuation)
+            self.particle_type.append(ptype)
+            self.n_particles += 1
+            self.n_solid_particles += int(ptype == 1)
 
     def set_offset(self, x, y):
         self.offset_x = x
@@ -309,7 +322,7 @@ def fish(scene):
     scene.set_n_actuators(4)
 
 
-def robot(scene):
+def robot1(scene):
     scene.set_offset(0.1, 0.03)
     scene.add_rect(0.0, 0.1, 0.3, 0.1, -1)
     scene.add_rect(0.0, 0.0, 0.05, 0.1, 0)
@@ -318,27 +331,15 @@ def robot(scene):
     scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
     scene.set_n_actuators(4)
 
-def cir_robot(scene):
-    # Parameters for the circle
-    center_x, center_y = 0.3, 0.3
-    radius = 0.1
-    num_particles = 200  # Number of particles to approximate the circle
-
-    # Adding circular shape particles
-    for i in range(num_particles):
-        angle = 2 * math.pi * i / num_particles
-        x_pos = center_x + radius * math.cos(angle)
-        y_pos = center_y + radius * math.sin(angle)
-
-        # Using -1 for passive particles, change if actuators are needed
-        scene.x.append([x_pos, y_pos])
-        scene.actuator_id.append(-1)  # No actuator for simplicity
-        scene.particle_type.append(1)  # Solid particles
-
-    scene.n_particles += num_particles
-    scene.n_solid_particles += num_particles
-
-    scene.set_n_actuators(0)  # Set actuators if needed later
+def robot(scene):
+    scene.set_offset(0.1, 0.03)
+    scene.add_rect(0.0, 0.1, 0.3, 0.1, -1)
+    scene.add_rect(0.0, 0.0, 0.05, 0.1, 0)
+    scene.add_rect(0.05, 0.0, 0.05, 0.1, 1)
+    scene.add_rect(0.2, 0.0, 0.05, 0.1, 2)
+    scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
+    scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.set_n_actuators(4)
 
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 
@@ -360,70 +361,21 @@ def visualize(s, folder):
     os.makedirs(folder, exist_ok=True)
     gui.show(f'{folder}/{s:04d}.png')
 
-def allocate_fields():
-    # Ensure at least shape (1, 1) to prevent unplaced fields
-    min_actuators = max(1, n_actuators)
-
-    ti.root.dense(ti.ij, (min_actuators, n_sin_waves)).place(weights)
-    ti.root.dense(ti.i, min_actuators).place(bias)
-    ti.root.dense(ti.ij, (max_steps, min_actuators)).place(actuation)
-
-    ti.root.dense(ti.i, n_particles).place(actuator_id, particle_type)
-    ti.root.dense(ti.k, max_steps).dense(ti.l, n_particles).place(x, v, C, F)
-    ti.root.dense(ti.ij, n_grid).place(grid_v_in, grid_m_in, grid_v_out)
-    ti.root.place(loss, x_avg)
-
-    ti.root.lazy_grad()
-
-@ti.kernel
-def compute_actuation(t: ti.i32):
-    if ti.static(n_actuators == 0):
-        return  # Skip actuation if there are no actuators
-    for i in range(n_actuators):
-        act = 0.0
-        for j in ti.static(range(n_sin_waves)):
-            act += weights[i, j] * ti.sin(actuation_omega * t * dt +
-                                          2 * math.pi / n_sin_waves * j)
-        act += bias[i]
-        actuation[t, i] = ti.tanh(act)
-
-@ti.ad.grad_replaced
-def advance(s):
-    clear_grid()
-    compute_actuation(s)
-    p2g(s)
-    grid_op()
-    g2p(s)
-
-@ti.ad.grad_for(advance)
-def advance_grad(s):
-    clear_grid()
-    p2g(s)
-    grid_op()
-
-    g2p.grad(s)
-    grid_op.grad()
-    p2g.grad(s)
-    if n_actuators > 0:
-        compute_actuation.grad(s)
-
-# Main function modification
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
     options = parser.parse_args()
 
-    # Initialization
+    # initialization
     scene = Scene()
-    cir_robot(scene)  # Using the circular robot
+    robot(scene)
     scene.finalize()
     allocate_fields()
 
-    if n_actuators > 0:
-        for i in range(n_actuators):
-            for j in range(n_sin_waves):
-                weights[i, j] = np.random.randn() * 0.01
+    for i in range(n_actuators):
+        for j in range(n_sin_waves):
+            weights[i, j] = np.random.randn() * 0.01
 
     for i in range(scene.n_particles):
         x[0, i] = scene.x[i]
@@ -440,22 +392,25 @@ def main():
         print('i=', iter, 'loss=', l)
         learning_rate = 0.1
 
-        if n_actuators > 0:
-            for i in range(n_actuators):
-                for j in range(n_sin_waves):
-                    weights[i, j] -= learning_rate * weights.grad[i, j]
-                bias[i] -= learning_rate * bias.grad[i]
+        for i in range(n_actuators):
+            for j in range(n_sin_waves):
+                # print(weights.grad[i, j])
+                weights[i, j] -= learning_rate * weights.grad[i, j]
+            bias[i] -= learning_rate * bias.grad[i]
 
         if iter % 10 == 0:
+            # visualize
             forward(1500)
             for s in range(15, 1500, 16):
                 visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
 
+    # ti.profiler_print()
     plt.title("Optimization of Initial Velocity")
     plt.ylabel("Loss")
     plt.xlabel("Gradient Descent Iterations")
     plt.plot(losses)
     plt.show()
+
 
 if __name__ == '__main__':
     main()
