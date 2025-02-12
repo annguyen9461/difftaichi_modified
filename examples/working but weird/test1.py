@@ -263,6 +263,8 @@ class Scene:
         self.particle_type = []
         self.offset_x = 0
         self.offset_y = 0
+        self.connections = []  # Store spring/joint connections
+        self.n_actuators = 1  # Initialize with at least 1 actuator
 
     def add_rect(self, x, y, w, h, actuation, ptype=1):
         if ptype == 0:
@@ -282,36 +284,9 @@ class Scene:
                 self.particle_type.append(ptype)
                 self.n_particles += 1
                 self.n_solid_particles += int(ptype == 1)
-    
-    # def add_1circle(self, center_x, center_y, radius, actuation, ptype=1):
-    #     global n_particles
-    #     num_particles = int(2 * math.pi * radius / dx)
-    #     for i in range(num_particles):
-    #         angle = 2 * math.pi * i / num_particles
-    #         x_pos = center_x + radius * math.cos(angle) + self.offset_x
-    #         y_pos = center_y + radius * math.sin(angle) + self.offset_y
-    #         self.x.append([x_pos, y_pos])
-    #         self.actuator_id.append(actuation)
-    #         self.particle_type.append(ptype)
-    #         self.n_particles += 1
-    #         self.n_solid_particles += int(ptype == 1)
+                if actuation != -1:
+                    self.n_actuators = max(self.n_actuators, actuation + 1)
 
-    def add_1st_quad_circle(self, center_x, center_y, radius, actuation, ptype=1):
-        global n_particles
-        spacing = dx / 2  # Adjust spacing for denser particles
-        # Iterate over a grid within the bounding box of the circle
-        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing)):
-            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing)):
-                x_pos = center_x + (i - int((center_x - radius) / spacing)) * spacing
-                y_pos = center_y + (j - int((center_y - radius) / spacing)) * spacing
-                # Check if the point is inside the circle
-                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
-                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
-                    self.actuator_id.append(actuation)
-                    self.particle_type.append(ptype)
-                    self.n_particles += 1
-                    self.n_solid_particles += int(ptype == 1)
-        
     def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
         global n_particles
         spacing = dx / 2  # Adjust spacing for denser particles
@@ -327,21 +302,149 @@ class Scene:
                     self.particle_type.append(ptype)
                     self.n_particles += 1
                     self.n_solid_particles += int(ptype == 1)
+                    if actuation != -1:
+                        self.n_actuators = max(self.n_actuators, actuation + 1)
 
-    def set_offset(self, x, y):
-        self.offset_x = x
-        self.offset_y = y
+    def add_parametric_curve(self, start_x, start_y, params, n_points, actuation, ptype=1):
+        """Add particles along a parametric curve
+        params: dict with curve parameters (e.g., amplitude, frequency)"""
+        for i in range(n_points):
+            t = i / (n_points - 1)
+            # Parametric equations (e.g., for a sine wave)
+            x_pos = start_x + t * params.get('length', 0.5)
+            y_pos = start_y + params.get('amplitude', 0.1) * math.sin(2 * math.pi * params.get('frequency', 1) * t)
+            
+            self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
+            self.actuator_id.append(actuation)
+            self.particle_type.append(ptype)
+            self.n_particles += 1
+            self.n_solid_particles += int(ptype == 1)
+            if actuation != -1:
+                self.n_actuators = max(self.n_actuators, actuation + 1)
+
+    def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype=1):
+        """Create a recursive branching structure (e.g., tree-like)"""
+        if depth <= 0:
+            return
+            
+        # Add main branch
+        end_x = start_x + branch_length * math.cos(angle)
+        end_y = start_y + branch_length * math.sin(angle)
+        
+        # Add particles along the branch
+        n_points = max(3, int(branch_length / dx * 2))
+        for i in range(n_points):
+            t = i / (n_points - 1)
+            x_pos = start_x + t * (end_x - start_x)
+            y_pos = start_y + t * (end_y - start_y)
+            
+            self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
+            self.actuator_id.append(actuation_start)
+            self.particle_type.append(ptype)
+            self.n_particles += 1
+            self.n_solid_particles += int(ptype == 1)
+            if actuation_start != -1:
+                self.n_actuators = max(self.n_actuators, actuation_start + 1)
+            
+        # Create sub-branches
+        branch_angle = math.pi / 4  # 45 degrees
+        new_length = branch_length * 0.7  # Shorter sub-branches
+        
+        self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
+                                   angle + branch_angle, actuation_start + 1, ptype)
+        self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
+                                   angle - branch_angle, actuation_start + 2, ptype)
+
+    def add_spring_chain(self, start_x, start_y, n_segments, segment_length, actuation_pattern='alternating'):
+        """Create a chain of segments connected by springs"""
+        prev_end_idx = None
+        
+        for i in range(n_segments):
+            # Determine actuation ID based on pattern
+            if actuation_pattern == 'alternating':
+                act_id = i % 2
+            elif actuation_pattern == 'sequential':
+                act_id = i
+            else:
+                act_id = -1
+                
+            # Add segment
+            x_pos = start_x + i * segment_length
+            segment_start_idx = self.n_particles
+            
+            # Add particles for current segment
+            self.add_rect(x_pos, start_y, segment_length * 0.8, segment_length * 0.2, act_id)
+            
+            # Connect with previous segment
+            if prev_end_idx is not None:
+                self.connections.append({
+                    'type': 'spring',
+                    'start': prev_end_idx,
+                    'end': segment_start_idx,
+                    'stiffness': 1000.0
+                })
+                
+            prev_end_idx = self.n_particles - 1
+
+    def add_chain(self, start_x, start_y, n_segments, segment_radius, spacing):
+        """Create a chain of circles"""
+        for i in range(n_segments):
+            x_pos = start_x + i * (segment_radius * 2 + spacing)
+            actuation = i % 2  # Alternate actuation between segments
+            self.add_circle(x_pos, start_y, segment_radius, actuation)
+            self.n_actuators = max(self.n_actuators, actuation + 1)
+
+    def add_tree(self, start_x, start_y, depth, size):
+        """Create a tree-like structure"""
+        if depth <= 0:
+            return
+        
+        # Add main node
+        self.add_circle(start_x, start_y, size, depth % 2)
+        
+        if depth > 1:
+            # Add two branches
+            angle = math.pi / 4  # 45 degrees
+            new_size = size * 0.7
+            spacing = size * 3
+            
+            # Left branch
+            left_x = start_x - spacing * math.cos(angle)
+            left_y = start_y + spacing * math.sin(angle)
+            self.add_tree(left_x, left_y, depth - 1, new_size)
+            
+            # Right branch
+            right_x = start_x + spacing * math.cos(angle)
+            right_y = start_y + spacing * math.sin(angle)
+            self.add_tree(right_x, right_y, depth - 1, new_size)
 
     def finalize(self):
-        global n_particles, n_solid_particles
+        global n_particles, n_solid_particles, n_actuators
         n_particles = self.n_particles
         n_solid_particles = self.n_solid_particles
+        n_actuators = self.n_actuators  # Update global n_actuators
         print('n_particles', n_particles)
         print('n_solid', n_solid_particles)
+        print('n_actuators', n_actuators)
 
-    def set_n_actuators(self, n_act):
-        global n_actuators
-        n_actuators = n_act
+def create_complex_robot(scene):
+    """Create a more complex robot structure"""
+    # # Base structure - a chain of circles
+    # scene.add_chain(0.3, 0.5, 5, 0.05, 0.02)
+    
+    # Add a tree structure on top
+    scene.add_tree(0.5, 0.7, 3, 0.05)
+    
+    # # Add a parametric curve (e.g., a sine wave)
+    # scene.add_parametric_curve(0.2, 0.3, {'length': 0.4, 'amplitude': 0.1, 'frequency': 2}, 10, 0)
+    
+    # # Add a branching structure (e.g., a tree)
+    # scene.add_branching_structure(0.7, 0.3, 3, 0.1, -math.pi / 2, 1)
+    
+    # # Add a spring chain (e.g., a flexible limb)
+    # scene.add_spring_chain(0.1, 0.2, 4, 0.1, 'alternating')
+    
+    scene.finalize()
 
 
 def fish(scene):
@@ -363,51 +466,20 @@ def robot1(scene):
     scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
     scene.set_n_actuators(4)
 
-def robot_first_quadrant_links(scene):
-    # scene.set_offset(0.1, 0.03)
-    
-    #ceiling
-    # scene.add_1st_quadrant_circle(0.3, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.7, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
 
-    #celing going down
-    scene.add_1st_quadrant_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.8, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #bottom row
-    # scene.add_1st_quadrant_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.4, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.3, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.2, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #bigger radius
-    scene.add_1st_quadrant_circle(0.1, 0.5, 0.2, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.1, 0.5, 0.3, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.4, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.5, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
-
-    #going up
-    # scene.add_1st_quadrant_circle(0.3, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.3, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.set_n_actuators(4)
-
-def robot(scene):
-    scene.add_circle(0.5, 0.9, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.8, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.7, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.6, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.5, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
+def robot2(scene):
+    # like a vertical bouncing pendulum
+    scene.add_circle(0.5, 0.9, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.5, 0.8, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.5, 0.7, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.5, 0.6, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(0.5, 0.5, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
 
     scene.set_offset(0.1, 0.03)
-    scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    # scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     # scene.set_n_actuators(4)
     scene.set_n_actuators(1)
-    
+
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 
 
@@ -428,28 +500,25 @@ def visualize(s, folder):
     os.makedirs(folder, exist_ok=True)
     gui.show(f'{folder}/{s:04d}.png')
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
     options = parser.parse_args()
 
-    # initialization
+    # Initialize scene with complex robot
     scene = Scene()
-    robot(scene)
-    scene.finalize()
-    allocate_fields()
+    create_complex_robot(scene)  # This will set n_actuators
+    scene.finalize()  # Finalize the scene to update n_actuators
+    allocate_fields()  # Allocate fields after n_actuators is set
 
-    for i in range(n_actuators):
-        for j in range(n_sin_waves):
-            weights[i, j] = np.random.randn() * 0.01
-
+    # Initialize particle positions, deformation gradient, and velocity
     for i in range(scene.n_particles):
         x[0, i] = scene.x[i]
         F[0, i] = [[1, 0], [0, 1]]
         actuator_id[i] = scene.actuator_id[i]
         particle_type[i] = scene.particle_type[i]
 
+    # Optimization loop
     losses = []
     for iter in range(options.iters):
         with ti.ad.Tape(loss):
@@ -459,25 +528,24 @@ def main():
         print('i=', iter, 'loss=', l)
         learning_rate = 0.1
 
+        # Update weights and biases
         for i in range(n_actuators):
             for j in range(n_sin_waves):
-                # print(weights.grad[i, j])
                 weights[i, j] -= learning_rate * weights.grad[i, j]
             bias[i] -= learning_rate * bias.grad[i]
 
+        # Visualize every 10 iterations
         if iter % 10 == 0:
-            # visualize
             forward(1500)
             for s in range(15, 1500, 16):
                 visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
 
-    # ti.profiler_print()
+    # Plot loss
     plt.title("Optimization of Initial Velocity")
     plt.ylabel("Loss")
     plt.xlabel("Gradient Descent Iterations")
     plt.plot(losses)
     plt.show()
-
 
 if __name__ == '__main__':
     main()
