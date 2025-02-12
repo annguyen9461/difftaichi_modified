@@ -296,6 +296,22 @@ class Scene:
     #         self.n_particles += 1
     #         self.n_solid_particles += int(ptype == 1)
 
+    def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
+        global n_particles
+        spacing = dx / 2  # Adjust spacing for denser particles
+        # Iterate over a grid within the bounding box of the circle
+        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing)):
+            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing)):
+                x_pos = center_x + (i - int((center_x - radius) / spacing)) * spacing
+                y_pos = center_y + (j - int((center_y - radius) / spacing)) * spacing
+                # Check if the point is inside the circle
+                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
+                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
+                    self.actuator_id.append(actuation)
+                    self.particle_type.append(ptype)
+                    self.n_particles += 1
+                    self.n_solid_particles += int(ptype == 1)
+
     def set_offset(self, x, y):
         self.offset_x = x
         self.offset_y = y
@@ -332,13 +348,9 @@ def robot1(scene):
     scene.set_n_actuators(4)
 
 def robot(scene):
-    scene.set_offset(0.1, 0.03)
-    scene.add_rect(0.0, 0.1, 0.3, 0.1, -1)
-    scene.add_rect(0.0, 0.0, 0.05, 0.1, 0)
-    scene.add_rect(0.05, 0.0, 0.05, 0.1, 1)
-    scene.add_rect(0.2, 0.0, 0.05, 0.1, 2)
-    scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
+    # scene.set_offset(0.1, 0.03)
     scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
+    scene.add_circle(1.5, 1.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
     scene.set_n_actuators(4)
 
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
