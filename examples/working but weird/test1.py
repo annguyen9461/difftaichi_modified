@@ -427,21 +427,30 @@ class Scene:
         print('n_solid', n_solid_particles)
         print('n_actuators', n_actuators)
 
+    def set_n_actuators(self, n_act):
+        global n_actuators
+        n_actuators = n_act
+
 def create_complex_robot(scene):
     """Create a more complex robot structure"""
-    # # Base structure - a chain of circles
-    # scene.add_chain(0.3, 0.5, 5, 0.05, 0.02)
+    # Base structure - a chain of circles
+    # WORKs: a line of hori balls
+    # scene.add_chain(0.3, 0.5, 5, 0.05, 0.02)       
     
     # Add a tree structure on top
-    scene.add_tree(0.5, 0.7, 3, 0.05)
+    # WORKS: a bunch of symmetric circles
+    # scene.add_tree(0.5, 0.7, 3, 0.05)           
     
-    # # Add a parametric curve (e.g., a sine wave)
+    # Add a parametric curve (e.g., a sine wave)
+    # DOES NOT WORK
     # scene.add_parametric_curve(0.2, 0.3, {'length': 0.4, 'amplitude': 0.1, 'frequency': 2}, 10, 0)
     
-    # # Add a branching structure (e.g., a tree)
+    # Add a branching structure (e.g., a tree)
+    # WORKS BUT: squiggly lines drop on the ground
     # scene.add_branching_structure(0.7, 0.3, 3, 0.1, -math.pi / 2, 1)
     
-    # # Add a spring chain (e.g., a flexible limb)
+    # Add a spring chain (e.g., a flexible limb)
+    # WORKS: hori rectangles in a line
     # scene.add_spring_chain(0.1, 0.2, 4, 0.1, 'alternating')
     
     scene.finalize()
@@ -456,29 +465,6 @@ def fish(scene):
     scene.add_rect(0.225, 0.15, 0.025, 0.05, 3)
     scene.set_n_actuators(4)
 
-
-def robot1(scene):
-    scene.set_offset(0.1, 0.03)
-    scene.add_rect(0.0, 0.1, 0.3, 0.1, -1)
-    scene.add_rect(0.0, 0.0, 0.05, 0.1, 0)
-    scene.add_rect(0.05, 0.0, 0.05, 0.1, 1)
-    scene.add_rect(0.2, 0.0, 0.05, 0.1, 2)
-    scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
-    scene.set_n_actuators(4)
-
-
-def robot2(scene):
-    # like a vertical bouncing pendulum
-    scene.add_circle(0.5, 0.9, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.8, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.7, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.6, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.5, 0.05, -1, ptype=1)  # Add a dense, bouncy circle
-
-    scene.set_offset(0.1, 0.03)
-    # scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.set_n_actuators(4)
-    scene.set_n_actuators(1)
 
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 
@@ -508,6 +494,7 @@ def main():
     # Initialize scene with complex robot
     scene = Scene()
     create_complex_robot(scene)  # This will set n_actuators
+    # fish(scene)  # This will set n_actuators
     scene.finalize()  # Finalize the scene to update n_actuators
     allocate_fields()  # Allocate fields after n_actuators is set
 
