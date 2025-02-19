@@ -265,6 +265,20 @@ class Scene:
         self.offset_y = 0
         self.connections = []  # Store spring/joint connections
         self.n_actuators = 1  # Initialize with at least 1 actuator
+        self.springs = []  # Store spring connections
+
+    
+    ##### START ###
+    def add_spring(self, p1, p2, stiffness, damping):
+        """Add a spring connection between two particles"""
+        self.springs.append({
+            'p1': p1,
+            'p2': p2,
+            'stiffness': stiffness,
+            'damping': damping,
+            'rest_length': np.linalg.norm(np.array(self.x[p1]) - np.array(self.x[p2]))
+        })
+    ##### END ###
 
     def add_rect(self, x, y, w, h, actuation, ptype=1):
         if ptype == 0:
@@ -323,21 +337,24 @@ class Scene:
                 self.n_actuators = max(self.n_actuators, actuation + 1)
 
     def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype=1):
-        """Create a recursive branching structure (e.g., tree-like)"""
+        """Create a recursive branching structure (e.g., snowflake-like) with springs and actuation"""
         if depth <= 0:
             return
-            
+
         # Add main branch
         end_x = start_x + branch_length * math.cos(angle)
         end_y = start_y + branch_length * math.sin(angle)
-        
+
         # Add particles along the branch
         n_points = max(3, int(branch_length / dx * 2))
+        prev_particle_idx = None  # Track the previous particle index for spring connections
+
         for i in range(n_points):
             t = i / (n_points - 1)
             x_pos = start_x + t * (end_x - start_x)
             y_pos = start_y + t * (end_y - start_y)
-            
+
+            # Add particle
             self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
             self.actuator_id.append(actuation_start)
             self.particle_type.append(ptype)
@@ -345,46 +362,27 @@ class Scene:
             self.n_solid_particles += int(ptype == 1)
             if actuation_start != -1:
                 self.n_actuators = max(self.n_actuators, actuation_start + 1)
-            
-        # Create sub-branches
-        branch_angle = math.pi / 4  # 45 degrees
-        new_length = branch_length * 0.7  # Shorter sub-branches
-        
-        self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
-                                   angle + branch_angle, actuation_start + 1, ptype)
-        self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
-                                   angle - branch_angle, actuation_start + 2, ptype)
 
-    def add_spring_chain(self, start_x, start_y, n_segments, segment_length, actuation_pattern='alternating'):
-        """Create a chain of segments connected by springs"""
-        prev_end_idx = None
-        
-        for i in range(n_segments):
-            # Determine actuation ID based on pattern
-            if actuation_pattern == 'alternating':
-                act_id = i % 2
-            elif actuation_pattern == 'sequential':
-                act_id = i
-            else:
-                act_id = -1
-                
-            # Add segment
-            x_pos = start_x + i * segment_length
-            segment_start_idx = self.n_particles
-            
-            # Add particles for current segment
-            self.add_rect(x_pos, start_y, segment_length * 0.8, segment_length * 0.2, act_id)
-            
-            # Connect with previous segment
-            if prev_end_idx is not None:
-                self.connections.append({
-                    'type': 'spring',
-                    'start': prev_end_idx,
-                    'end': segment_start_idx,
-                    'stiffness': 1000.0
-                })
-                
-            prev_end_idx = self.n_particles - 1
+            # Add spring connection to previous particle
+            if prev_particle_idx is not None:
+                ##### START ###
+                # Add a softer spring between the current particle and the previous one
+                self.add_spring(prev_particle_idx, self.n_particles - 1, stiffness=500.0, damping=0.05)
+                ##### END ###
+
+            prev_particle_idx = self.n_particles - 1
+
+        # Create sub-branches
+        branch_angle = math.pi / 3  # 60 degrees for snowflake symmetry
+        new_length = branch_length * 0.6  # Shorter sub-branches
+
+        ##### START ###
+        # Add 6 symmetric sub-branches for snowflake pattern
+        for i in range(6):
+            sub_angle = angle + i * branch_angle
+            self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
+                                    sub_angle, actuation_start + 1, ptype)
+        ##### END ###
 
     def add_chain(self, start_x, start_y, n_segments, segment_radius, spacing):
         """Create a chain of circles"""
@@ -431,30 +429,40 @@ class Scene:
         global n_actuators
         n_actuators = n_act
 
-def create_complex_robot(scene):
-    """Create a more complex robot structure"""
-    # Base structure - a chain of circles
-    # WORKs: a line of hori balls
-    # scene.add_chain(0.3, 0.5, 5, 0.05, 0.02)       
+# def create_complex_robot(scene):
+#     """Create a more complex robot structure"""
+#     # Base structure - a chain of circles
+#     # WORKs: a line of hori balls
+#     # scene.add_chain(0.3, 0.5, 5, 0.05, 0.02)       
     
-    # Add a tree structure on top
-    # WORKS: a bunch of symmetric circles
-    # scene.add_tree(0.5, 0.7, 3, 0.05)           
+#     # Add a tree structure on top
+#     # WORKS: a bunch of symmetric circles
+#     # scene.add_tree(0.5, 0.7, 3, 0.05)           
     
-    # Add a parametric curve (e.g., a sine wave)
-    # DOES NOT WORK
-    # scene.add_parametric_curve(0.2, 0.3, {'length': 0.4, 'amplitude': 0.1, 'frequency': 2}, 10, 0)
+#     # Add a parametric curve (e.g., a sine wave)
+#     # DOES NOT WORK
+#     # scene.add_parametric_curve(0.2, 0.3, {'length': 0.4, 'amplitude': 0.1, 'frequency': 2}, 10, 0)
     
-    # Add a branching structure (e.g., a tree)
-    # WORKS BUT: squiggly lines drop on the ground
-    # scene.add_branching_structure(0.7, 0.3, 3, 0.1, -math.pi / 2, 1)
+#     # Add a branching structure (e.g., a tree)
+#     # WORKS BUT: squiggly lines drop on the ground
+#     scene.add_branching_structure(0.7, 0.3, 3, 0.1, -math.pi / 2, 1)
     
-    # Add a spring chain (e.g., a flexible limb)
-    # WORKS: hori rectangles in a line
-    # scene.add_spring_chain(0.1, 0.2, 4, 0.1, 'alternating')
-    
-    scene.finalize()
+#     scene.finalize()
 
+def create_complex_robot(scene):
+    """Create a snowflake-like structure starting from the left side of the screen"""
+    start_x = 0.1  # Start from the left side of the screen
+    start_y = 0.5  # Middle of the screen vertically
+    depth = 3  # Depth of recursion
+    branch_length = 0.1  # Length of the main branch
+    angle = 0  # Initial angle (horizontal)
+
+    ##### START ###
+    # Add the snowflake-like branching structure
+    scene.add_branching_structure(start_x, start_y, depth, branch_length, angle, 0)
+    ##### END ###
+
+    scene.finalize()
 
 def fish(scene):
     scene.add_rect(0.025, 0.025, 0.95, 0.1, -1, ptype=0)
@@ -494,7 +502,6 @@ def main():
     # Initialize scene with complex robot
     scene = Scene()
     create_complex_robot(scene)  # This will set n_actuators
-    # fish(scene)  # This will set n_actuators
     scene.finalize()  # Finalize the scene to update n_actuators
     allocate_fields()  # Allocate fields after n_actuators is set
 
@@ -504,6 +511,11 @@ def main():
         F[0, i] = [[1, 0], [0, 1]]
         actuator_id[i] = scene.actuator_id[i]
         particle_type[i] = scene.particle_type[i]
+
+        ##### START ###
+        # Add initial velocity to make the structure roll
+        v[0, i] = [2.0, 0.0]  # Move to the right
+        ##### END ###
 
     # Optimization loop
     losses = []
