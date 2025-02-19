@@ -345,16 +345,16 @@ class Scene:
         end_x = start_x + branch_length * math.cos(angle)
         end_y = start_y + branch_length * math.sin(angle)
 
-        # Add particles along the branch
-        n_points = max(3, int(branch_length / dx * 2))
-        prev_particle_idx = None  # Track the previous particle index for spring connections
+        # Add more points for thicker branches
+        n_points = max(5, int(branch_length / dx * 4))  # Increased density
+        prev_particle_idx = None
 
         for i in range(n_points):
             t = i / (n_points - 1)
             x_pos = start_x + t * (end_x - start_x)
             y_pos = start_y + t * (end_y - start_y)
 
-            # Add particle
+            # Add primary particle
             self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
             self.actuator_id.append(actuation_start)
             self.particle_type.append(ptype)
@@ -363,26 +363,34 @@ class Scene:
             if actuation_start != -1:
                 self.n_actuators = max(self.n_actuators, actuation_start + 1)
 
-            # Add spring connection to previous particle
+            # Connect springs for structural stability
             if prev_particle_idx is not None:
-                ##### START ###
-                # Add a softer spring between the current particle and the previous one
-                self.add_spring(prev_particle_idx, self.n_particles - 1, stiffness=500.0, damping=0.05)
-                ##### END ###
+                self.add_spring(prev_particle_idx, self.n_particles - 1, stiffness=700.0, damping=0.08)
 
             prev_particle_idx = self.n_particles - 1
 
-        # Create sub-branches
-        branch_angle = math.pi / 3  # 60 degrees for snowflake symmetry
-        new_length = branch_length * 0.6  # Shorter sub-branches
+            # Add parallel particles to thicken the branch
+            thickness_offset = dx * 0.3  # Controls the thickness
+            for offset_angle in [-math.pi/12, math.pi/12]:  # ±15 degrees for side branches
+                offset_x = thickness_offset * math.cos(angle + offset_angle)
+                offset_y = thickness_offset * math.sin(angle + offset_angle)
+                self.x.append([x_pos + offset_x + self.offset_x, y_pos + offset_y + self.offset_y])
+                self.actuator_id.append(actuation_start)
+                self.particle_type.append(ptype)
+                self.n_particles += 1
+                self.n_solid_particles += int(ptype == 1)
 
-        ##### START ###
-        # Add 6 symmetric sub-branches for snowflake pattern
+                # Add springs between central and parallel branches
+                self.add_spring(self.n_particles - 2, self.n_particles - 1, stiffness=500.0, damping=0.05)
+
+        # Create sub-branches
+        branch_angle = math.pi / 3  # 60 degrees for symmetry
+        new_length = branch_length * 0.7  # Reduce length for sub-branches
+
         for i in range(6):
             sub_angle = angle + i * branch_angle
-            self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
-                                    sub_angle, actuation_start + 1, ptype)
-        ##### END ###
+            self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, actuation_start + 1, ptype)
+
 
     def add_chain(self, start_x, start_y, n_segments, segment_radius, spacing):
         """Create a chain of circles"""
@@ -514,7 +522,7 @@ def main():
 
         ##### START ###
         # Add initial velocity to make the structure roll
-        v[0, i] = [2.0, 0.0]  # Move to the right
+        v[0, i] = [0.0, 0.0]  # Move to the right
         ##### END ###
 
     # Optimization loop
