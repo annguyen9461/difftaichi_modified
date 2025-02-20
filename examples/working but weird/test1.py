@@ -572,7 +572,7 @@ gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 #     os.makedirs(folder, exist_ok=True)
 #     gui.show(f'{folder}/{s:04d}.png')
 
-def visualize(s, folder):
+def visualize(s, folder, scene):  # Add 'scene' as a parameter
     aid = actuator_id.to_numpy()
     colors = np.empty(shape=n_particles, dtype=np.uint32)
     particles = x.to_numpy()[s]
@@ -586,7 +586,7 @@ def visualize(s, folder):
     gui.circles(pos=particles, color=colors, radius=1.5)
 
     # Draw spring connections
-    for spring in scene.springs:
+    for spring in scene.springs:  # Use the passed 'scene' object
         p1 = particles[spring['p1']]
         p2 = particles[spring['p2']]
         gui.line(p1, p2, radius=1, color=0x0000FF)  # Draw blue lines for springs
@@ -686,7 +686,7 @@ def main():
         if iter % 10 == 0:
             forward(1500)
             for s in range(15, 1500, 16):
-                visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
+                visualize(s, 'diffmpm/iter{:03d}/'.format(iter), scene)  # Pass 'scene' here
 
     # Plot loss
     plt.title("Optimization of Initial Velocity")
