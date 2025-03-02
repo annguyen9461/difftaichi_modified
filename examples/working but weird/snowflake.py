@@ -280,7 +280,7 @@ class Scene:
         self.springs = []  # Store spring connections
 
     
-    ##### START ###
+    
     def add_spring(self, p1, p2, stiffness, damping):
         """Add a spring connection between two particles"""
         self.springs.append({
@@ -290,7 +290,7 @@ class Scene:
             'damping': damping,
             'rest_length': np.linalg.norm(np.array(self.x[p1]) - np.array(self.x[p2]))
         })
-    ##### END ###
+    
 
     def add_rect(self, x, y, w, h, actuation, ptype=1):
         if ptype == 0:
@@ -348,71 +348,10 @@ class Scene:
             if actuation != -1:
                 self.n_actuators = max(self.n_actuators, actuation + 1)
 
-    # def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype=1):
-    #     """Create a recursive branching structure (e.g., snowflake-like) with thicker branches"""
-    #     if depth <= 0:
-    #         return
-
-    #     # Add main branch
-    #     end_x = start_x + branch_length * math.cos(angle)
-    #     end_y = start_y + branch_length * math.sin(angle)
-
-    #     # Add particles along the branch
-    #     n_points = max(5, int(branch_length / dx * 4))  # Increase particle density
-    #     prev_particle_idx = None  # Track the previous particle index for spring connections
-
-    #     for i in range(n_points):
-    #         t = i / (n_points - 1)
-    #         x_pos = start_x + t * (end_x - start_x)
-    #         y_pos = start_y + t * (end_y - start_y)
-
-    #         # Add particles in a perpendicular direction to create thickness
-    #         thickness = 0.02  # Thickness of the branch
-    #         for j in range(-1, 2):  # Add 3 particles in a line perpendicular to the branch
-    #             offset_x = -j * thickness * math.sin(angle)
-    #             offset_y = j * thickness * math.cos(angle)
-
-    #             # Add particle
-    #             self.x.append([x_pos + offset_x + self.offset_x, y_pos + offset_y + self.offset_y])
-    #             self.actuator_id.append(actuation_start)
-    #             self.particle_type.append(ptype)
-    #             self.n_particles += 1
-    #             self.n_solid_particles += int(ptype == 1)
-    #             if actuation_start != -1:
-    #                 self.n_actuators = max(self.n_actuators, actuation_start + 1)
-
-    #             # Add spring connection to previous particle in the same line
-    #             if prev_particle_idx is not None and j == 0:
-    #                 ##### START ###
-    #                 # Add a softer spring between the current particle and the previous one
-    #                 self.add_spring(prev_particle_idx, self.n_particles - 1, stiffness=500.0, damping=0.05)
-    #                 ##### END ###
-
-    #             # Add spring connections between particles in the perpendicular direction
-    #             if j != -1:
-    #                 self.add_spring(self.n_particles - 1, self.n_particles - 2, stiffness=500.0, damping=0.05)
-
-    #         prev_particle_idx = self.n_particles - 1
-
-    #     # Create sub-branches
-    #     branch_angle = math.pi / 3  # 60 degrees for snowflake symmetry
-    #     new_length = branch_length * 0.6  # Shorter sub-branches
-
-    #     ##### START ###
-    #     # Add 6 symmetric sub-branches for snowflake pattern
-    #     for i in range(6):
-    #         sub_angle = angle + i * branch_angle
-    #         self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
-    #                                 sub_angle, actuation_start + 1, ptype)
-    #     ##### END ###
-
     def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype=1):
+        """Create a recursive branching structure (e.g., snowflake-like) with thicker branches"""
         if depth <= 0:
             return
-
-        # Randomize branch length and angle
-        branch_length *= random.uniform(0.8, 1.2)  # Randomize length by ±20%
-        angle += random.uniform(-math.pi / 6, math.pi / 6)  # Randomize angle by ±30 degrees
 
         # Add main branch
         end_x = start_x + branch_length * math.cos(angle)
@@ -444,7 +383,10 @@ class Scene:
 
                 # Add spring connection to previous particle in the same line
                 if prev_particle_idx is not None and j == 0:
+                    
+                    # Add a softer spring between the current particle and the previous one
                     self.add_spring(prev_particle_idx, self.n_particles - 1, stiffness=500.0, damping=0.05)
+                    
 
                 # Add spring connections between particles in the perpendicular direction
                 if j != -1:
@@ -456,11 +398,13 @@ class Scene:
         branch_angle = math.pi / 3  # 60 degrees for snowflake symmetry
         new_length = branch_length * 0.6  # Shorter sub-branches
 
+        
         # Add 6 symmetric sub-branches for snowflake pattern
         for i in range(6):
             sub_angle = angle + i * branch_angle
-            self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, actuation_start + 1, ptype)
-            
+            self.add_branching_structure(end_x, end_y, depth - 1, new_length, 
+                                    sub_angle, actuation_start + 1, ptype)
+        
 
     def add_chain(self, start_x, start_y, n_segments, segment_radius, spacing):
         """Create a chain of circles"""
@@ -535,10 +479,10 @@ def create_complex_robot(scene):
     branch_length = 0.1  # Length of the main branch
     angle = 0  # Initial angle (horizontal)
 
-    ##### START ###
+    
     # Add the snowflake-like branching structure
     scene.add_branching_structure(start_x, start_y, depth, branch_length, angle, 0)
-    ##### END ###
+    
 
     scene.finalize()
 
@@ -555,24 +499,7 @@ def fish(scene):
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 
 
-# def visualize(s, folder):
-#     aid = actuator_id.to_numpy()
-#     colors = np.empty(shape=n_particles, dtype=np.uint32)
-#     particles = x.to_numpy()[s]
-#     actuation_ = actuation.to_numpy()
-#     for i in range(n_particles):
-#         color = 0x111111
-#         if aid[i] != -1:
-#             act = actuation_[s - 1, int(aid[i])]
-#             color = ti.rgb_to_hex((0.5 - act, 0.5 - abs(act), 0.5 + act))
-#         colors[i] = color
-#     gui.circles(pos=particles, color=colors, radius=1.5)
-#     gui.line((0.05, 0.02), (0.95, 0.02), radius=3, color=0x0)
-
-#     os.makedirs(folder, exist_ok=True)
-#     gui.show(f'{folder}/{s:04d}.png')
-
-def visualize(s, folder, scene):  # Add 'scene' as a parameter
+def visualize(s, folder):
     aid = actuator_id.to_numpy()
     colors = np.empty(shape=n_particles, dtype=np.uint32)
     particles = x.to_numpy()[s]
@@ -584,68 +511,11 @@ def visualize(s, folder, scene):  # Add 'scene' as a parameter
             color = ti.rgb_to_hex((0.5 - act, 0.5 - abs(act), 0.5 + act))
         colors[i] = color
     gui.circles(pos=particles, color=colors, radius=1.5)
-
-    # Draw spring connections
-    for spring in scene.springs:  # Use the passed 'scene' object
-        p1 = particles[spring['p1']]
-        p2 = particles[spring['p2']]
-        gui.line(p1, p2, radius=1, color=0x0000FF)  # Draw blue lines for springs
-
     gui.line((0.05, 0.02), (0.95, 0.02), radius=3, color=0x0)
+
     os.makedirs(folder, exist_ok=True)
     gui.show(f'{folder}/{s:04d}.png')
 
-# def main():
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument('--iters', type=int, default=100)
-#     options = parser.parse_args()
-
-#     # Initialize scene with complex robot
-#     scene = Scene()
-#     create_complex_robot(scene)  # This will set n_actuators
-#     scene.finalize()  # Finalize the scene to update n_actuators
-#     allocate_fields()  # Allocate fields after n_actuators is set
-
-#     # Initialize particle positions, deformation gradient, and velocity
-#     for i in range(scene.n_particles):
-#         x[0, i] = scene.x[i]
-#         F[0, i] = [[1, 0], [0, 1]]
-#         actuator_id[i] = scene.actuator_id[i]
-#         particle_type[i] = scene.particle_type[i]
-
-#         ##### START ###
-#         # Add initial velocity to make the structure roll
-#         v[0, i] = [0.0, 0.0]  # Move to the right
-#         ##### END ###
-
-#     # Optimization loop
-#     losses = []
-#     for iter in range(options.iters):
-#         with ti.ad.Tape(loss):
-#             forward()
-#         l = loss[None]
-#         losses.append(l)
-#         print('i=', iter, 'loss=', l)
-#         learning_rate = 0.1
-
-#         # Update weights and biases
-#         for i in range(n_actuators):
-#             for j in range(n_sin_waves):
-#                 weights[i, j] -= learning_rate * weights.grad[i, j]
-#             bias[i] -= learning_rate * bias.grad[i]
-
-#         # Visualize every 10 iterations
-#         if iter % 10 == 0:
-#             forward(1500)
-#             for s in range(15, 1500, 16):
-#                 visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
-
-#     # Plot loss
-#     plt.title("Optimization of Initial Velocity")
-#     plt.ylabel("Loss")
-#     plt.xlabel("Gradient Descent Iterations")
-#     plt.plot(losses)
-#     plt.show()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -654,7 +524,7 @@ def main():
 
     # Initialize scene with complex robot
     scene = Scene()
-    scene.add_branching_structure(0.1, 0.5, 3, 0.1, 0, 0)  # Create snowflake structure
+    create_complex_robot(scene)  # This will set n_actuators
     scene.finalize()  # Finalize the scene to update n_actuators
     allocate_fields()  # Allocate fields after n_actuators is set
 
@@ -664,7 +534,11 @@ def main():
         F[0, i] = [[1, 0], [0, 1]]
         actuator_id[i] = scene.actuator_id[i]
         particle_type[i] = scene.particle_type[i]
-        v[0, i] = [0.0, 0.0]  # Initial velocity
+
+        
+        # Add initial velocity to make the structure roll
+        v[0, i] = [0.0, 0.0]  # Move to the right
+        
 
     # Optimization loop
     losses = []
@@ -686,7 +560,7 @@ def main():
         if iter % 10 == 0:
             forward(1500)
             for s in range(15, 1500, 16):
-                visualize(s, 'diffmpm/iter{:03d}/'.format(iter), scene)  # Pass 'scene' here
+                visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
 
     # Plot loss
     plt.title("Optimization of Initial Velocity")
@@ -694,6 +568,6 @@ def main():
     plt.xlabel("Gradient Descent Iterations")
     plt.plot(losses)
     plt.show()
-    
+
 if __name__ == '__main__':
     main()

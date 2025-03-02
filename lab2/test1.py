@@ -5,6 +5,9 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+import random
+
+
 real = ti.f32
 ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
 
@@ -208,6 +211,15 @@ def compute_actuation(t: ti.i32):
         act += bias[i]
         actuation[t, i] = ti.tanh(act)
 
+    # Apply actuation forces to particles
+    for p in range(n_particles):
+        act_id = actuator_id[p]
+        if act_id != -1:
+            # Apply a horizontal force to make the structure roll
+            v[0, p][0] += actuation[t, act_id] * act_strength * dt
+            # Apply a vertical force to make the structure bounce
+            v[0, p][1] += actuation[t, act_id] * act_strength * dt * 0.5
+
 
 @ti.kernel
 def compute_x_avg():
@@ -263,6 +275,22 @@ class Scene:
         self.particle_type = []
         self.offset_x = 0
         self.offset_y = 0
+        self.connections = []  # Store spring/joint connections
+        self.n_actuators = 1  # Initialize with at least 1 actuator
+        self.springs = []  # Store spring connections
+
+    
+    
+    def add_spring(self, p1, p2, stiffness, damping):
+        """Add a spring connection between two particles"""
+        self.springs.append({
+            'p1': p1,
+            'p2': p2,
+            'stiffness': stiffness,
+            'damping': damping,
+            'rest_length': np.linalg.norm(np.array(self.x[p1]) - np.array(self.x[p2]))
+        })
+    
 
     def add_rect(self, x, y, w, h, actuation, ptype=1):
         if ptype == 0:
@@ -282,36 +310,9 @@ class Scene:
                 self.particle_type.append(ptype)
                 self.n_particles += 1
                 self.n_solid_particles += int(ptype == 1)
-    
-    # def add_1circle(self, center_x, center_y, radius, actuation, ptype=1):
-    #     global n_particles
-    #     num_particles = int(2 * math.pi * radius / dx)
-    #     for i in range(num_particles):
-    #         angle = 2 * math.pi * i / num_particles
-    #         x_pos = center_x + radius * math.cos(angle) + self.offset_x
-    #         y_pos = center_y + radius * math.sin(angle) + self.offset_y
-    #         self.x.append([x_pos, y_pos])
-    #         self.actuator_id.append(actuation)
-    #         self.particle_type.append(ptype)
-    #         self.n_particles += 1
-    #         self.n_solid_particles += int(ptype == 1)
+                if actuation != -1:
+                    self.n_actuators = max(self.n_actuators, actuation + 1)
 
-    def add_1st_quad_circle(self, center_x, center_y, radius, actuation, ptype=1):
-        global n_particles
-        spacing = dx / 2  # Adjust spacing for denser particles
-        # Iterate over a grid within the bounding box of the circle
-        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing)):
-            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing)):
-                x_pos = center_x + (i - int((center_x - radius) / spacing)) * spacing
-                y_pos = center_y + (j - int((center_y - radius) / spacing)) * spacing
-                # Check if the point is inside the circle
-                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
-                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
-                    self.actuator_id.append(actuation)
-                    self.particle_type.append(ptype)
-                    self.n_particles += 1
-                    self.n_solid_particles += int(ptype == 1)
-        
     def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
         global n_particles
         spacing = dx / 2  # Adjust spacing for denser particles
@@ -327,87 +328,85 @@ class Scene:
                     self.particle_type.append(ptype)
                     self.n_particles += 1
                     self.n_solid_particles += int(ptype == 1)
+                    if actuation != -1:
+                        self.n_actuators = max(self.n_actuators, actuation + 1)
+    
+    def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
+        """Create a recursive branching structure (e.g., snowflake-like) with thicker branches"""
+        if depth <= 0:
+            return
 
-    def set_offset(self, x, y):
-        self.offset_x = x
-        self.offset_y = y
+        # Add main branch
+        end_x = start_x + branch_length * math.cos(angle)
+        end_y = start_y + branch_length * math.sin(angle)
+
+        # Add particles along the branch
+        n_points = max(5, int(branch_length / dx * 4))  # Increase particle density
+        prev_particle_idx = None  # Track the previous particle index for spring connections
+
+        for i in range(n_points):
+            t = i / (n_points - 1)
+            x_pos = start_x + t * (end_x - start_x)
+            y_pos = start_y + t * (end_y - start_y)
+
+            # Add particles in a perpendicular direction to create thickness
+            for j in range(-1, 2):  # Add 3 particles in a line perpendicular to the branch
+                offset_x = -j * params["thickness"] * math.sin(angle)
+                offset_y = j * params["thickness"] * math.cos(angle)
+
+                # Add particle
+                self.x.append([x_pos + offset_x + self.offset_x, y_pos + offset_y + self.offset_y])
+                self.actuator_id.append(actuation_start)
+                self.particle_type.append(ptype)
+                self.n_particles += 1
+                self.n_solid_particles += int(ptype == 1)
+                if actuation_start != -1:
+                    self.n_actuators = max(self.n_actuators, actuation_start + 1)
+
+                # Add spring connection to previous particle in the same line
+                if prev_particle_idx is not None and j == 0:
+                    self.add_spring(prev_particle_idx, self.n_particles - 1, params["stiffness"], params["damping"])
+
+                # Add spring connections between particles in the perpendicular direction
+                if j != -1:
+                    self.add_spring(self.n_particles - 1, self.n_particles - 2, params["stiffness"], params["damping"])
+
+            prev_particle_idx = self.n_particles - 1
+
+        # Create sub-branches
+        for i in range(params["num_sub_branches"]):
+            sub_angle = angle + i * params["sub_branch_angle"]
+            new_length = branch_length * params["sub_branch_length_ratio"]
+            self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, actuation_start + 1, ptype, params)
 
     def finalize(self):
-        global n_particles, n_solid_particles
+        global n_particles, n_solid_particles, n_actuators
         n_particles = self.n_particles
         n_solid_particles = self.n_solid_particles
+        n_actuators = self.n_actuators  # Update global n_actuators
         print('n_particles', n_particles)
         print('n_solid', n_solid_particles)
+        print('n_actuators', n_actuators)
 
     def set_n_actuators(self, n_act):
         global n_actuators
         n_actuators = n_act
 
+def create_complex_robot(scene, params):
+    """Create a snowflake-like structure using the provided parameters"""
+    start_x = params["start_x"]
+    start_y = params["start_y"]
+    depth = params["depth"]
+    branch_length = params["branch_length"]
+    angle = params["angle"]
+    actuation_start = params["actuation_start"]
+    ptype = params["ptype"]
 
-def fish(scene):
-    scene.add_rect(0.025, 0.025, 0.95, 0.1, -1, ptype=0)
-    scene.add_rect(0.1, 0.2, 0.15, 0.05, -1)
-    scene.add_rect(0.1, 0.15, 0.025, 0.05, 0)
-    scene.add_rect(0.125, 0.15, 0.025, 0.05, 1)
-    scene.add_rect(0.2, 0.15, 0.025, 0.05, 2)
-    scene.add_rect(0.225, 0.15, 0.025, 0.05, 3)
-    scene.set_n_actuators(4)
+    # Add the snowflake-like branching structure
+    scene.add_branching_structure(start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params)
 
+    scene.finalize()
 
-def robot1(scene):
-    scene.set_offset(0.1, 0.03)
-    scene.add_rect(0.0, 0.1, 0.3, 0.1, -1)
-    scene.add_rect(0.0, 0.0, 0.05, 0.1, 0)
-    scene.add_rect(0.05, 0.0, 0.05, 0.1, 1)
-    scene.add_rect(0.2, 0.0, 0.05, 0.1, 2)
-    scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
-    scene.set_n_actuators(4)
-
-def robot_first_quadrant_links(scene):
-    # scene.set_offset(0.1, 0.03)
-    
-    #ceiling
-    # scene.add_1st_quadrant_circle(0.3, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.7, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #celing going down
-    scene.add_1st_quadrant_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.8, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #bottom row
-    # scene.add_1st_quadrant_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.4, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.3, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.2, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #bigger radius
-    scene.add_1st_quadrant_circle(0.1, 0.5, 0.2, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.1, 0.5, 0.3, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.4, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.5, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
-
-    #going up
-    # scene.add_1st_quadrant_circle(0.3, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.3, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.set_n_actuators(4)
-
-def robot(scene):
-    scene.add_circle(0.5, 0.9, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.8, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.7, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.6, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.5, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-
-    scene.set_offset(0.1, 0.03)
-    scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.set_n_actuators(4)
-    scene.set_n_actuators(1)
-    
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 
 
@@ -434,22 +433,53 @@ def main():
     parser.add_argument('--iters', type=int, default=100)
     options = parser.parse_args()
 
-    # initialization
+    # Define snowflake parameters
+    # snowflake_params = {
+    #     "start_x": 0.1,
+    #     "start_y": 0.5,
+    #     "depth": 3,
+    #     "branch_length": 0.1,
+    #     "angle": 0,
+    #     "thickness": 0.02,
+    #     "stiffness": 500.0,
+    #     "damping": 0.05,
+    #     "num_sub_branches": 6,
+    #     "sub_branch_angle": math.pi / 3,
+    #     "sub_branch_length_ratio": 0.6,
+    #     "actuation_start": 0,
+    #     "ptype": 1
+    # }
+
+    snowflake_params = {
+        "start_x": 0.1,
+        "start_y": 0.5,
+        "depth": 2,  # Reduced depth for fewer branches
+        "branch_length": 0.05,  # Reduced branch length for a smaller snowflake
+        "angle": 0,
+        "thickness": 0.01,  # Reduced thickness for thinner branches
+        "stiffness": 500.0,
+        "damping": 0.05,
+        "num_sub_branches": 6,
+        "sub_branch_angle": math.pi / 3,
+        "sub_branch_length_ratio": 0.6,
+        "actuation_start": 0,
+        "ptype": 1
+    }
+
+    # Initialize scene with complex robot
     scene = Scene()
-    robot(scene)
+    create_complex_robot(scene, snowflake_params)  # Pass the parameters
     scene.finalize()
     allocate_fields()
 
-    for i in range(n_actuators):
-        for j in range(n_sin_waves):
-            weights[i, j] = np.random.randn() * 0.01
-
+    # Initialize particle positions, deformation gradient, and velocity
     for i in range(scene.n_particles):
         x[0, i] = scene.x[i]
-        F[0, i] = [[, 0], [0, 1]]
+        F[0, i] = [[1, 0], [0, 1]]
         actuator_id[i] = scene.actuator_id[i]
         particle_type[i] = scene.particle_type[i]
 
+    # Optimization loop
     losses = []
     for iter in range(options.iters):
         with ti.ad.Tape(loss):
@@ -461,23 +491,21 @@ def main():
 
         for i in range(n_actuators):
             for j in range(n_sin_waves):
-                # print(weights.grad[i, j])
                 weights[i, j] -= learning_rate * weights.grad[i, j]
             bias[i] -= learning_rate * bias.grad[i]
 
         if iter % 10 == 0:
-            # visualize
+            # Visualize
             forward(1500)
             for s in range(15, 1500, 16):
                 visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
 
-    # ti.profiler_print()
+    # Plot loss
     plt.title("Optimization of Initial Velocity")
     plt.ylabel("Loss")
     plt.xlabel("Gradient Descent Iterations")
     plt.plot(losses)
     plt.show()
-
 
 if __name__ == '__main__':
     main()

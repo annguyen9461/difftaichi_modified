@@ -282,51 +282,6 @@ class Scene:
                 self.particle_type.append(ptype)
                 self.n_particles += 1
                 self.n_solid_particles += int(ptype == 1)
-    
-    # def add_1circle(self, center_x, center_y, radius, actuation, ptype=1):
-    #     global n_particles
-    #     num_particles = int(2 * math.pi * radius / dx)
-    #     for i in range(num_particles):
-    #         angle = 2 * math.pi * i / num_particles
-    #         x_pos = center_x + radius * math.cos(angle) + self.offset_x
-    #         y_pos = center_y + radius * math.sin(angle) + self.offset_y
-    #         self.x.append([x_pos, y_pos])
-    #         self.actuator_id.append(actuation)
-    #         self.particle_type.append(ptype)
-    #         self.n_particles += 1
-    #         self.n_solid_particles += int(ptype == 1)
-
-    def add_1st_quad_circle(self, center_x, center_y, radius, actuation, ptype=1):
-        global n_particles
-        spacing = dx / 2  # Adjust spacing for denser particles
-        # Iterate over a grid within the bounding box of the circle
-        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing)):
-            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing)):
-                x_pos = center_x + (i - int((center_x - radius) / spacing)) * spacing
-                y_pos = center_y + (j - int((center_y - radius) / spacing)) * spacing
-                # Check if the point is inside the circle
-                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
-                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
-                    self.actuator_id.append(actuation)
-                    self.particle_type.append(ptype)
-                    self.n_particles += 1
-                    self.n_solid_particles += int(ptype == 1)
-        
-    def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
-        global n_particles
-        spacing = dx / 2  # Adjust spacing for denser particles
-        # Iterate over a grid within the bounding box of the circle
-        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing) + 1):
-            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing) + 1):
-                x_pos = center_x + (i * spacing - center_x)
-                y_pos = center_y + (j * spacing - center_y)
-                # Check if the point is inside the circle
-                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
-                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
-                    self.actuator_id.append(actuation)
-                    self.particle_type.append(ptype)
-                    self.n_particles += 1
-                    self.n_solid_particles += int(ptype == 1)
 
     def set_offset(self, x, y):
         self.offset_x = x
@@ -354,7 +309,7 @@ def fish(scene):
     scene.set_n_actuators(4)
 
 
-def robot1(scene):
+def robot(scene):
     scene.set_offset(0.1, 0.03)
     scene.add_rect(0.0, 0.1, 0.3, 0.1, -1)
     scene.add_rect(0.0, 0.0, 0.05, 0.1, 0)
@@ -363,51 +318,7 @@ def robot1(scene):
     scene.add_rect(0.25, 0.0, 0.05, 0.1, 3)
     scene.set_n_actuators(4)
 
-def robot_first_quadrant_links(scene):
-    # scene.set_offset(0.1, 0.03)
-    
-    #ceiling
-    # scene.add_1st_quadrant_circle(0.3, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.7, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
 
-    #celing going down
-    scene.add_1st_quadrant_circle(0.5, 0.9, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.8, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #bottom row
-    # scene.add_1st_quadrant_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.4, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.3, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.2, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-
-    #bigger radius
-    scene.add_1st_quadrant_circle(0.1, 0.5, 0.2, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_1st_quadrant_circle(0.1, 0.5, 0.3, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.4, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
-    # scene.add_1st_quadrant_circle(0.1, 0.5, 0.5, -1, ptype=1)  # Add a dense, bouncy circle    breaks CUDA here cuz too many particles
-
-    #going up
-    # scene.add_1st_quadrant_circle(0.3, 0.6, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.add_1st_quadrant_circle(0.3, 0.7, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.set_n_actuators(4)
-
-def robot(scene):
-    scene.add_circle(0.5, 0.9, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.8, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.7, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.6, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-    scene.add_circle(0.5, 0.5, 0.001, -1, ptype=1)  # Add a dense, bouncy circle
-
-    scene.set_offset(0.1, 0.03)
-    scene.add_circle(0.5, 0.5, 0.1, -1, ptype=1)  # Add a dense, bouncy circle
-    # scene.set_n_actuators(4)
-    scene.set_n_actuators(1)
-    
 gui = ti.GUI("Differentiable MPM", (640, 640), background_color=0xFFFFFF)
 
 
@@ -446,7 +357,7 @@ def main():
 
     for i in range(scene.n_particles):
         x[0, i] = scene.x[i]
-        F[0, i] = [[, 0], [0, 1]]
+        F[0, i] = [[1, 0], [0, 1]]
         actuator_id[i] = scene.actuator_id[i]
         particle_type[i] = scene.particle_type[i]
 
