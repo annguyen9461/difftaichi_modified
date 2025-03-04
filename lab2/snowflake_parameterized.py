@@ -13,7 +13,7 @@ real = ti.f32
 ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
 
 dim = 2
-n_particles = 1500
+n_particles = 3000
 n_solid_particles = 0
 n_actuators = 0
 n_grid = 128
@@ -213,13 +213,13 @@ def compute_actuation(t: ti.i32):
         actuation[t, i] = ti.tanh(act)
 
     # Apply actuation forces to particles
-    for p in range(n_particles):
-        act_id = actuator_id[p]
-        if act_id != -1:
-            # Apply a horizontal force to make the structure roll
-            v[0, p][0] += actuation[t, act_id] * act_strength * dt
-            # Apply a vertical force to make the structure bounce
-            v[0, p][1] += actuation[t, act_id] * act_strength * dt * 0.5
+    # for p in range(n_particles):
+    #     act_id = actuator_id[p]
+    #     if act_id != -1:
+    #         # Apply a horizontal force to make the structure roll
+    #         v[0, p][0] += actuation[t, act_id] * act_strength * dt
+    #         # Apply a vertical force to make the structure bounce
+    #         v[0, p][1] += actuation[t, act_id] * act_strength * dt * 0.5
 
 
 @ti.kernel
@@ -463,7 +463,24 @@ def save_params_to_csv(params, folder="config"):
             writer.writerow([key, value])
     
     print(f"Configuration saved to {filename}")
-            
+
+def load_params_from_csv(filename):
+    """Load snowflake parameters from a CSV file."""
+    params = {}
+    with open(filename, mode="r") as file:
+        reader = csv.reader(file)
+        next(reader)  # Skip the header row
+        for row in reader:
+            key, value = row
+            # Convert value to the appropriate type
+            if key in ["depth", "num_sub_branches", "actuation_start", "ptype"]:
+                params[key] = int(value)
+            elif key in ["start_x", "start_y", "branch_length", "angle", "thickness", "stiffness", "damping", "sub_branch_angle", "sub_branch_length_ratio"]:
+                params[key] = float(value)
+            else:
+                params[key] = value
+    return params
+        
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
@@ -503,15 +520,34 @@ def main():
     #     "ptype": 1
     # }
     
-    snowflake_params = randomize_snowflake_params()
-    
-    # Print the randomized parameters
-    print("Randomized Snowflake Parameters:")
+    # PARAMS FROM FILE
+    # Load parameters from a CSV file
+    # meh
+    # filename = "config/snowflake_config_20250304_111823.csv"
+    # broken
+    # filename = "config/snowflake_config_20250304_104434.csv"
+
+    # nice
+    filename = "config/snowflake_config_20250304_095003.csv"
+
+    snowflake_params = load_params_from_csv(filename)
+
+    # Print the loaded parameters
+    print("Loaded Snowflake Parameters:")
     for key, value in snowflake_params.items():
         print(f"{key}: {value}")
+
+    # PARAMS FROM RANDOM
+    # snowflake_params = randomize_snowflake_params()
+    
+    # # Print the randomized parameters
+    # print("Randomized Snowflake Parameters:")
+    # for key, value in snowflake_params.items():
+    #     print(f"{key}: {value}")
         
     # Save the randomized parameters to a file
-    save_params_to_csv(snowflake_params, "config")
+    # save_params_to_csv(snowflake_params, "config")
+
 
     # Initialize scene with complex robot
     scene = Scene()
