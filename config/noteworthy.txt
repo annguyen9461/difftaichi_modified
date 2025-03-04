@@ -1,0 +1,8 @@
+interesting
+
+snowflake_config_20250304_112929.csv
+snowflake_config_20250304_114509.csv
+snowflake_config_20250304_115011.csv
+
+bounce well
+snowflake_config_20250304_115400.csv

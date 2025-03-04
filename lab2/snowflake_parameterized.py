@@ -13,7 +13,7 @@ real = ti.f32
 ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
 
 dim = 2
-n_particles = 3000
+n_particles = 5000
 n_solid_particles = 0
 n_actuators = 0
 n_grid = 128
@@ -524,29 +524,32 @@ def main():
     # Load parameters from a CSV file
     # meh
     # filename = "config/snowflake_config_20250304_111823.csv"
+    # filename = "config/snowflake_config_20250304_095109.csv"
+
+
     # broken
     # filename = "config/snowflake_config_20250304_104434.csv"
+    # filename = "config/snowflake_config_20250304_095003.csv"
 
-    # nice
-    filename = "config/snowflake_config_20250304_095003.csv"
+    # intesting
+    # filename = "config/snowflake_config_20250304_114509.csv"
+    # snowflake_params = load_params_from_csv(filename)
 
-    snowflake_params = load_params_from_csv(filename)
-
-    # Print the loaded parameters
-    print("Loaded Snowflake Parameters:")
-    for key, value in snowflake_params.items():
-        print(f"{key}: {value}")
-
-    # PARAMS FROM RANDOM
-    # snowflake_params = randomize_snowflake_params()
-    
-    # # Print the randomized parameters
-    # print("Randomized Snowflake Parameters:")
+    # # Print the loaded parameters
+    # print("Loaded Snowflake Parameters:")
     # for key, value in snowflake_params.items():
     #     print(f"{key}: {value}")
+
+    # PARAMS FROM RANDOM
+    snowflake_params = randomize_snowflake_params()
+    
+    # Print the randomized parameters
+    print("Randomized Snowflake Parameters:")
+    for key, value in snowflake_params.items():
+        print(f"{key}: {value}")
         
     # Save the randomized parameters to a file
-    # save_params_to_csv(snowflake_params, "config")
+    save_params_to_csv(snowflake_params, "config")
 
 
     # Initialize scene with complex robot
