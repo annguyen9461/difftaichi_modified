@@ -1,12 +1,13 @@
 import taichi as ti
 import argparse
-import os
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+import os
+import csv
+from datetime import datetime
 import random
-
+import math
 
 real = ti.f32
 ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
@@ -428,6 +429,41 @@ def visualize(s, folder):
     gui.show(f'{folder}/{s:04d}.png')
 
 
+def randomize_snowflake_params():
+    snowflake_params = {
+        "start_x": random.uniform(0.0, 0.2),
+        "start_y": random.uniform(0.4, 0.6),
+        "depth": random.randint(2, 4),
+        "branch_length": random.uniform(0.03, 0.07),
+        "angle": random.uniform(0, 2 * math.pi),
+        "thickness": random.uniform(0.005, 0.015),
+        "stiffness": random.uniform(400.0, 600.0),
+        "damping": random.uniform(0.03, 0.07),
+        "num_sub_branches": random.randint(4, 8),
+        "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
+        "sub_branch_length_ratio": random.uniform(0.5, 0.7),
+        "actuation_start": 0,
+        "ptype": 1
+    }
+    return snowflake_params
+
+def save_params_to_csv(params, folder="config"):
+    # Ensure the config folder exists
+    os.makedirs(folder, exist_ok=True)
+    
+    # Generate a unique filename with the current timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(folder, f"snowflake_config_{timestamp}.csv")
+    
+    # Save the parameters to a CSV file
+    with open(filename, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Parameter", "Value"])  # Write header
+        for key, value in params.items():
+            writer.writerow([key, value])
+    
+    print(f"Configuration saved to {filename}")
+            
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
@@ -450,21 +486,27 @@ def main():
     #     "ptype": 1
     # }
 
-    snowflake_params = {
-        "start_x": 0.1,
-        "start_y": 0.5,
-        "depth": 2,  # Reduced depth for fewer branches
-        "branch_length": 0.05,  # Reduced branch length for a smaller snowflake
-        "angle": 0,
-        "thickness": 0.01,  # Reduced thickness for thinner branches
-        "stiffness": 500.0,
-        "damping": 0.05,
-        "num_sub_branches": 6,
-        "sub_branch_angle": math.pi / 3,
-        "sub_branch_length_ratio": 0.6,
-        "actuation_start": 0,
-        "ptype": 1
-    }
+    # smaller snowflake
+    # snowflake_params = {
+    #     "start_x": 0.1,
+    #     "start_y": 0.5,
+    #     "depth": 2,  # Reduced depth for fewer branches
+    #     "branch_length": 0.05,  # Reduced branch length for a smaller snowflake
+    #     "angle": 0,
+    #     "thickness": 0.01,  # Reduced thickness for thinner branches
+    #     "stiffness": 500.0,
+    #     "damping": 0.05,
+    #     "num_sub_branches": 6,
+    #     "sub_branch_angle": math.pi / 3,
+    #     "sub_branch_length_ratio": 0.6,
+    #     "actuation_start": 0,
+    #     "ptype": 1
+    # }
+    
+    snowflake_params = randomize_snowflake_params()
+
+    # Save the randomized parameters to a file
+    save_params_to_csv(snowflake_params, "config")
 
     # Initialize scene with complex robot
     scene = Scene()

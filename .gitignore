@@ -1,2 +1,3 @@
 examples/diffmpm/iter*
 examples/__pycache__/
+diffmpm/
