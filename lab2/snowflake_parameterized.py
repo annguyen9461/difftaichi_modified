@@ -13,7 +13,7 @@ real = ti.f32
 ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
 
 dim = 2
-n_particles = 8192
+n_particles = 1500
 n_solid_particles = 0
 n_actuators = 0
 n_grid = 128
@@ -434,7 +434,7 @@ def randomize_snowflake_params():
         "start_x": random.uniform(0.0, 0.2),
         "start_y": random.uniform(0.4, 0.6),
         "depth": random.randint(2, 4),
-        "branch_length": random.uniform(0.03, 0.07),
+        "branch_length": random.uniform(0.03, 0.2),
         "angle": random.uniform(0, 2 * math.pi),
         "thickness": random.uniform(0.005, 0.015),
         "stiffness": random.uniform(400.0, 600.0),
@@ -504,7 +504,12 @@ def main():
     # }
     
     snowflake_params = randomize_snowflake_params()
-
+    
+    # Print the randomized parameters
+    print("Randomized Snowflake Parameters:")
+    for key, value in snowflake_params.items():
+        print(f"{key}: {value}")
+        
     # Save the randomized parameters to a file
     save_params_to_csv(snowflake_params, "config")
 
