@@ -294,7 +294,10 @@ class Scene:
         self.n_actuators = 1  # Initialize with at least 1 actuator
         self.springs = []  # Store spring connections
 
-    
+    def set_offset(self, offset_x, offset_y):
+        """Set the offset for the scene"""
+        self.offset_x = offset_x
+        self.offset_y = offset_y
     
     def add_spring(self, p1, p2, stiffness, damping):
         """Add a spring connection between two particles"""
@@ -306,7 +309,6 @@ class Scene:
             'rest_length': np.linalg.norm(np.array(self.x[p1]) - np.array(self.x[p2]))
         })
     
-
     def add_rect(self, x, y, w, h, actuation, ptype=1):
         if ptype == 0:
             assert actuation == -1
@@ -345,67 +347,7 @@ class Scene:
                     self.n_solid_particles += int(ptype == 1)
                     if actuation != -1:
                         self.n_actuators = max(self.n_actuators, actuation + 1)
-    
-    def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
-        """Create a recursive branching structure (e.g., snowflake-like) with thicker branches"""
-        if depth <= 0:
-            return
 
-        # Add main branch
-        end_x = start_x + branch_length * math.cos(angle)
-        end_y = start_y + branch_length * math.sin(angle)
-
-        # Add particles along the branch
-        n_points = max(5, int(branch_length / dx * 4))  # Increase particle density
-        prev_particle_idx = None  # Track the previous particle index for spring connections
-
-        for i in range(n_points):
-            t = i / (n_points - 1)
-            x_pos = start_x + t * (end_x - start_x)
-            y_pos = start_y + t * (end_y - start_y)
-
-            # Add particles in a perpendicular direction to create thickness
-            for j in range(-1, 2):  # Add 3 particles in a line perpendicular to the branch
-                offset_x = -j * params["thickness"] * math.sin(angle)
-                offset_y = j * params["thickness"] * math.cos(angle)
-
-                # Add particle
-                self.x.append([x_pos + offset_x + self.offset_x, y_pos + offset_y + self.offset_y])
-                self.actuator_id.append(actuation_start)
-                self.particle_type.append(ptype)
-                self.n_particles += 1
-                self.n_solid_particles += int(ptype == 1)
-                if actuation_start != -1:
-                    self.n_actuators = max(self.n_actuators, actuation_start + 1)
-
-                # Add spring connection to previous particle in the same line
-                if prev_particle_idx is not None and j == 0:
-                    self.add_spring(prev_particle_idx, self.n_particles - 1, params["stiffness"], params["damping"])
-
-                # Add spring connections between particles in the perpendicular direction
-                if j != -1:
-                    self.add_spring(self.n_particles - 1, self.n_particles - 2, params["stiffness"], params["damping"])
-
-            prev_particle_idx = self.n_particles - 1
-
-        # Create sub-branches
-        for i in range(params["num_sub_branches"]):
-            sub_angle = angle + i * params["sub_branch_angle"]
-            new_length = branch_length * params["sub_branch_length_ratio"]
-            self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, actuation_start + 1, ptype, params)
-
-        # Add asymmetry to encourage directional movement (more branches on one side)
-        for i in range(params["num_sub_branches"]):
-            # Bias angles toward the right side to encourage rightward movement
-            if i < params["num_sub_branches"] // 2:
-                sub_angle = angle + i * params["sub_branch_angle"]
-            else:
-                # Make right-side branches slightly longer to create asymmetric rolling
-                sub_angle = angle + i * params["sub_branch_angle"]
-                new_length = branch_length * params["sub_branch_length_ratio"] * 1.2
-                
-            self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, 
-                                        actuation_start + 1, ptype, params)
     def finalize(self):
         global n_particles, n_solid_particles, n_actuators
         n_particles = self.n_particles
@@ -455,65 +397,6 @@ def visualize(s, folder):
     os.makedirs(folder, exist_ok=True)
     gui.show(f'{folder}/{s:04d}.png')
 
-
-def randomize_snowflake_params():
-    snowflake_params = {
-        "start_x": random.uniform(0.1, 0.2),
-        "start_y": random.uniform(0.01, 0.03),  # Start closer to the ground
-        "depth": random.randint(1, 2),
-        "branch_length": random.uniform(0.05, 0.1),
-        "angle": random.uniform(0, math.pi/4),  # Bias toward horizontal branches
-        "thickness": random.uniform(0.005, 0.01),
-        "stiffness": random.uniform(400.0, 600.0),
-        "damping": random.uniform(0.03, 0.07),
-        "num_sub_branches": random.randint(2, 3),
-        # Make branches tend to grow outward horizontally
-        "sub_branch_angle": random.uniform(-math.pi/6, math.pi/6),  
-        "sub_branch_length_ratio": random.uniform(0.5, 0.7),
-        "actuation_start": 0,
-        "ptype": 1
-    }
-    return snowflake_params
-
-# Add this function to estimate particle count before creating the structure
-def estimate_particle_count(params):
-    """Roughly estimate the number of particles for a given parameter set"""
-    points_per_branch = max(5, int(params["branch_length"] / dx * 4))
-    particles_per_point = 3  # From the perpendicular thickness
-    
-    # Recursive formula for branch count in a tree structure
-    # For a depth d with b sub-branches: total = 1 + b + b^2 + ... + b^(d-1)
-    # This simplifies to (b^d - 1)/(b - 1) for b > 1
-    d = params["depth"]
-    b = params["num_sub_branches"]
-    if b == 1:
-        total_branches = d
-    else:
-        total_branches = (b**d - 1) // (b - 1)
-    
-    # Estimate total particle count
-    total_particles = total_branches * points_per_branch * particles_per_point
-    return total_particles
-
-def randomize_snowflake_params():
-    snowflake_params = {
-        "start_x": random.uniform(0.1, 0.3),
-        "start_y": random.uniform(0.4, 0.6),
-        # Reduce complexity to prevent CUDA memory issues
-        "depth": random.randint(1, 2),  # Maximum depth of 2 
-        "branch_length": random.uniform(0.05, 0.1),  # Shorter branches
-        "angle": random.uniform(0, 2 * math.pi),
-        "thickness": random.uniform(0.005, 0.01),
-        "stiffness": random.uniform(400.0, 600.0),
-        "damping": random.uniform(0.03, 0.07),
-        "num_sub_branches": random.randint(2, 3),  # Fewer branches
-        "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
-        "sub_branch_length_ratio": random.uniform(0.5, 0.7),
-        "actuation_start": 0,
-        "ptype": 1
-    }
-    return snowflake_params
-
 def save_params_to_csv(params, folder="config"):
     # Ensure the config folder exists
     os.makedirs(folder, exist_ok=True)
@@ -548,26 +431,6 @@ def load_params_from_csv(filename):
                 params[key] = value
     return params
 
-def crossover(parent1, parent2):
-    # Implement crossover logic (e.g., mix parameters from both parents)
-    child = {}
-    for key in parent1.keys():
-        if random.random() < 0.5:
-            child[key] = parent1[key]
-        else:
-            child[key] = parent2[key]
-    return child
-
-def mutate(params):
-    # Implement mutation logic (e.g., randomly change some parameters)
-    for key in params.keys():
-        if random.random() < 0.1:  # 10% mutation rate
-            if isinstance(params[key], int):
-                params[key] += random.randint(-1, 1)
-            elif isinstance(params[key], float):
-                params[key] += random.uniform(-0.1, 0.1)
-    return params
-
 def reset_fields():
     """Reset Taichi fields to their initial state."""
     global x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
@@ -584,6 +447,202 @@ def reset_fields():
     loss[None] = 0
     x_avg[None] = [0, 0]
 
+def create_random_net(scene, params):
+    """Create a random net-like structure that starts from the origin (with an offset)"""
+    scene.set_offset(0.0, params["y_offset"])  # Small offset from the ground
+    
+    # Starting point near the origin
+    origin_x = params["origin_x"]
+    origin_y = params["origin_y"]
+    
+    # Create the initial node at the origin
+    nodes = [(origin_x, origin_y)]
+    node_indices = {}  # Map (x,y) coordinates to particle indices
+    
+    # Create the first particle (origin)
+    scene.x.append([origin_x + scene.offset_x, origin_y + scene.offset_y])
+    scene.actuator_id.append(0)  # First actuator
+    scene.particle_type.append(1)  # Solid particle
+    scene.n_particles += 1
+    scene.n_solid_particles += 1
+    scene.n_actuators = max(scene.n_actuators, 1)
+    
+    # Store the index of this first particle
+    first_idx = scene.n_particles - 1
+    node_indices[(origin_x, origin_y)] = first_idx
+    
+    # Add connections to form a net-like structure
+    for i in range(params["num_nodes"] - 1):
+        # Pick a random existing node to branch from
+        if not nodes:
+            break
+            
+        parent_idx = random.randint(0, len(nodes) - 1)
+        parent_x, parent_y = nodes[parent_idx]
+        parent_particle_idx = node_indices[(parent_x, parent_y)]
+        
+        # Determine the new node position with some randomness
+        angle = random.uniform(0, 2 * math.pi)
+        distance = random.uniform(params["min_distance"], params["max_distance"])
+        
+        # With high probability, bias toward the right direction to encourage rightward movement
+        if random.random() < params["rightward_bias"]:
+            angle = random.uniform(-math.pi/2, math.pi/2)  # Favor right side
+        
+        new_x = parent_x + distance * math.cos(angle)
+        new_y = parent_y + distance * math.sin(angle)
+        
+        # Make sure the new node stays within bounds
+        new_x = max(0.05, min(0.95, new_x))
+        new_y = max(params["y_offset"], min(0.95, new_y))
+        
+        # Create the new node
+        scene.x.append([new_x + scene.offset_x, new_y + scene.offset_y])
+        
+        # Assign an actuator ID with some probability, or -1 for non-actuated
+        if random.random() < params["actuator_probability"]:
+            actuator_id = random.randint(0, params["max_actuators"] - 1)
+        else:
+            actuator_id = -1
+            
+        scene.actuator_id.append(actuator_id)
+        scene.particle_type.append(1)  # Solid particle
+        scene.n_particles += 1
+        scene.n_solid_particles += 1
+        if actuator_id != -1:
+            scene.n_actuators = max(scene.n_actuators, actuator_id + 1)
+        
+        # Store the new node's index
+        new_idx = scene.n_particles - 1
+        node_indices[(new_x, new_y)] = new_idx
+        
+        # Add to nodes list
+        nodes.append((new_x, new_y))
+        
+        # Create a spring connection between parent and child
+        scene.add_spring(parent_particle_idx, new_idx, params["stiffness"], params["damping"])
+        
+        # Occasionally create additional connections to form a more net-like structure
+        if random.random() < params["extra_connection_probability"] and len(nodes) > 2:
+            # Find another random node that's not the parent to connect to
+            other_nodes = [n for n in nodes if n != (parent_x, parent_y) and n != (new_x, new_y)]
+            if other_nodes:
+                other_node = random.choice(other_nodes)
+                other_idx = node_indices[other_node]
+                
+                # Only connect if they're within a reasonable distance
+                dist = math.sqrt((new_x - other_node[0])**2 + (new_y - other_node[1])**2)
+                if dist < params["max_connection_distance"]:
+                    scene.add_spring(new_idx, other_idx, params["stiffness"], params["damping"])
+    
+    # Create additional random connections to make the structure more interesting
+    for _ in range(params["num_extra_connections"]):
+        if len(nodes) < 2:
+            break
+            
+        # Pick two random distinct nodes
+        idx1, idx2 = random.sample(range(len(nodes)), 2)
+        node1 = nodes[idx1]
+        node2 = nodes[idx2]
+        
+        # Check they're not already connected and within reasonable distance
+        dist = math.sqrt((node1[0] - node2[0])**2 + (node1[1] - node2[1])**2)
+        particle_idx1 = node_indices[node1]
+        particle_idx2 = node_indices[node2]
+        
+        # Only connect if they're within a reasonable distance
+        if dist < params["max_connection_distance"]:
+            scene.add_spring(particle_idx1, particle_idx2, params["stiffness"], params["damping"])
+    
+    # Add mid-segment particles to ensure smoother connections
+    original_nodes = list(node_indices.items())
+    
+    # For each spring connection, add intermediate particles
+    for spring in scene.springs:
+        p1_idx = spring['p1']
+        p2_idx = spring['p2']
+        
+        # Get the positions of the endpoints
+        p1_pos = scene.x[p1_idx]
+        p2_pos = scene.x[p2_idx]
+        
+        # Number of intermediate particles (denser for longer springs)
+        spring_length = np.linalg.norm(np.array(p1_pos) - np.array(p2_pos))
+        n_intermediate = max(1, int(spring_length / params["particle_spacing"]))
+        
+        # Add intermediate particles
+        for i in range(1, n_intermediate):
+            t = i / (n_intermediate + 1)
+            x_pos = p1_pos[0] * (1 - t) + p2_pos[0] * t
+            y_pos = p1_pos[1] * (1 - t) + p2_pos[1] * t
+            
+            # Add the intermediate particle
+            scene.x.append([x_pos, y_pos])
+            
+            # Inherit actuator from either endpoint with some randomness
+            if random.random() < 0.5:
+                actuator_id = scene.actuator_id[p1_idx]
+            else:
+                actuator_id = scene.actuator_id[p2_idx]
+                
+            scene.actuator_id.append(actuator_id)
+            scene.particle_type.append(1)  # Solid particle
+            scene.n_particles += 1
+            scene.n_solid_particles += 1
+            if actuator_id != -1:
+                scene.n_actuators = max(scene.n_actuators, actuator_id + 1)
+            
+            # Create springs to connect with previous and next particles
+            if i == 1:
+                scene.add_spring(p1_idx, scene.n_particles - 1, params["stiffness"], params["damping"])
+            else:
+                scene.add_spring(scene.n_particles - 2, scene.n_particles - 1, params["stiffness"], params["damping"])
+                
+            if i == n_intermediate - 1:
+                scene.add_spring(scene.n_particles - 1, p2_idx, params["stiffness"], params["damping"])
+    
+    # Finalize the scene
+    scene.finalize()
+
+def randomize_net_params(max_nodes=100):
+    """Generate random parameters for the net-like structure"""
+    net_params = {
+        "origin_x": 0.1,  # Start near the left side
+        "origin_y": 0.01,  # Start near the bottom with an offset
+        "y_offset": 0.03,  # Small offset from the ground
+        "num_nodes": random.randint(10, max_nodes),
+        "min_distance": 0.02,
+        "max_distance": 0.1,
+        "stiffness": random.uniform(400.0, 800.0),
+        "damping": random.uniform(0.03, 0.1),
+        "rightward_bias": random.uniform(0.6, 0.9),  # Bias toward right direction
+        "actuator_probability": random.uniform(0.3, 0.7),
+        "max_actuators": random.randint(3, 10),
+        "extra_connection_probability": random.uniform(0.1, 0.5),
+        "max_connection_distance": random.uniform(0.1, 0.2),
+        "num_extra_connections": random.randint(5, 20),
+        "particle_spacing": random.uniform(0.01, 0.03)
+    }
+    return net_params
+
+def estimate_net_particles(params):
+    """Estimate the number of particles for the net structure"""
+    # Base nodes
+    node_count = params["num_nodes"]
+    
+    # Rough estimate of connections
+    connection_count = node_count - 1  # Minimum tree connections
+    connection_count += params["num_extra_connections"]  # Extra random connections
+    
+    # Intermediate particles along connections
+    avg_connection_length = (params["min_distance"] + params["max_distance"]) / 2
+    avg_intermediate_particles = avg_connection_length / params["particle_spacing"]
+    
+    # Total particles
+    total_particles = node_count + connection_count * avg_intermediate_particles
+    
+    return int(total_particles)
+
 import os
 from datetime import datetime
 import shutil
@@ -593,7 +652,7 @@ def main():
     parser.add_argument('--iters', type=int, default=100)
     parser.add_argument('--population_size', type=int, default=10)
     parser.add_argument('--num_generations', type=int, default=5)
-    parser.add_argument('--max_particles', type=int, default=2000)  # Reduced from 5000
+    parser.add_argument('--max_particles', type=int, default=2000)
     options = parser.parse_args()
 
     # Create a folder for this run with the current timestamp
@@ -609,7 +668,7 @@ def main():
     
     try:
         # Initialize Taichi and allocate fields
-        ti.init(default_fp=real, arch=ti.gpu, flatten_if=True, device_memory_fraction=0.7)  # Limit GPU memory usage
+        ti.init(default_fp=real, arch=ti.gpu, flatten_if=True, device_memory_fraction=0.7)
         allocate_fields()
 
         # Run evolutionary optimization
@@ -626,7 +685,7 @@ def main():
 
         # Save the best structure's configuration
         best_config_file = os.path.join(run_folder, "best_structure.csv")
-        save_params_to_csv(best_structure, best_config_file)
+        save_params_to_csv(best_structure, folder=run_folder)
         print(f"Best structure configuration saved to {best_config_file}")
         
     except Exception as e:
@@ -635,7 +694,6 @@ def main():
     finally:
         # Clean up Taichi resources to prevent CUDA errors
         print("Cleaning up resources...")
-        # This explicit call to reset and garbage collection can help prevent CUDA errors
         import gc
         gc.collect()
         try:
@@ -643,9 +701,9 @@ def main():
         except:
             print("Warning: Error during ti.reset(). This is expected if CUDA resources are already freed.")
         print("Done!")
-        
+      
 def evolutionary_optimization(population_size, num_generations, run_folder, max_particles):
-    population = [randomize_snowflake_params() for _ in range(population_size)]
+    population = [randomize_net_params(max_nodes=min(50, max_particles // 20)) for _ in range(population_size)]
     all_fitness_scores = []
     
     for generation in range(num_generations):
@@ -658,18 +716,18 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
             print(f"Evaluating structure {idx + 1}/{population_size}")
             
             # Pre-check estimated particle count
-            est_particles = estimate_particle_count(params)
+            est_particles = estimate_net_particles(params)
             if est_particles > max_particles * 0.9:  # 90% safety margin
                 print(f"Estimated particles ({est_particles}) exceeds limit. Simplifying structure.")
-                if params["depth"] > 1:
-                    params["depth"] -= 1
-                if params["num_sub_branches"] > 2:
-                    params["num_sub_branches"] -= 1
+                # Reduce complexity
+                params["num_nodes"] = max(10, params["num_nodes"] // 2)
+                params["num_extra_connections"] = max(2, params["num_extra_connections"] // 2)
+                params["particle_spacing"] = min(0.05, params["particle_spacing"] * 1.5)
             
             # Create scene with safety check
             try:
                 scene = Scene()
-                create_complex_robot(scene, params)
+                create_random_net(scene, params)
                 
                 # Skip if too many particles
                 if scene.n_particles > max_particles:
@@ -711,6 +769,30 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
                     horizontal_distance = x_final - x_initial
                     fitness = horizontal_distance  # Reward horizontal movement
                     
+                    # Add visualization for interesting structures
+                    if horizontal_distance > 0.2:  # Only visualize good performers
+                        struct_viz_folder = os.path.join(gen_folder, f"structure_{idx + 1}_viz")
+                        os.makedirs(struct_viz_folder, exist_ok=True)
+                        
+                        # Run simulation again for visualization
+                        reset_fields()
+                        for i in range(scene.n_particles):
+                            x[0, i] = scene.x[i]
+                            F[0, i] = [[1, 0], [0, 1]]
+                            actuator_id[i] = scene.actuator_id[i]
+                            particle_type[i] = scene.particle_type[i]
+                        
+                        # Visualize a few key frames
+                        for s in range(0, steps, steps // 10):
+                            if s < steps - 1:
+                                clear_grid()
+                                compute_actuation(s)
+                                p2g(s)
+                                grid_op()
+                                g2p(s)
+                                if s % (steps // 10) == 0:
+                                    visualize(s + 1, struct_viz_folder)
+                    
                     # Force synchronization after simulation
                     ti.sync()
                     
@@ -727,7 +809,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
 
                 # Save the configuration and fitness score
                 config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
-                save_params_to_csv(params, config_file)
+                save_params_to_csv(params, folder=os.path.dirname(config_file))
                 with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
                     f.write(f"Structure {idx + 1}: {fitness}\n")
                     
@@ -743,7 +825,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
         # Check if we have any valid structures
         if all(score == -1000 for score in fitness_scores):
             print("No valid structures in this generation. Generating new population.")
-            population = [randomize_snowflake_params() for _ in range(population_size)]
+            population = [randomize_net_params(max_nodes=min(50, max_particles // 20)) for _ in range(population_size)]
             continue
 
         # Rank the structures in this generation
@@ -759,7 +841,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
         valid_structures = [(i, population[i]) for i in ranked_indices if fitness_scores[i] > -1000]
         if not valid_structures:
             print("No valid structures to select from. Generating new population.")
-            population = [randomize_snowflake_params() for _ in range(population_size)]
+            population = [randomize_net_params(max_nodes=min(50, max_particles // 20)) for _ in range(population_size)]
             continue
             
         top_structures = [params for _, params in valid_structures[:max(1, population_size // 2)]]
@@ -784,11 +866,66 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     # Return the best structure found across all generations
     valid_scores = [(score, params) for score, params in all_fitness_scores if score > -1000]
     if not valid_scores:
-        return randomize_snowflake_params()  # Return a random structure if all failed
+        return randomize_net_params(max_nodes=min(50, max_particles // 20))  # Return a random structure if all failed
         
     # Sort by score only (not by the dictionary)
     valid_scores.sort(key=lambda x: x[0], reverse=True)
     return valid_scores[0][1]  # Return the params of the best structure
+
+def crossover(parent1, parent2):
+    """Perform crossover between two parent structures"""
+    child = {}
+    for key in parent1.keys():
+        # For numeric parameters, we can use crossover techniques
+        if isinstance(parent1[key], (int, float)):
+            if random.random() < 0.5:
+                # Simple selection from either parent
+                child[key] = parent1[key] if random.random() < 0.5 else parent2[key]
+            else:
+                # Blending (for float values)
+                if isinstance(parent1[key], float):
+                    # Blend with some randomness
+                    blend_ratio = random.random()
+                    child[key] = parent1[key] * blend_ratio + parent2[key] * (1 - blend_ratio)
+                else:
+                    # For integers, just take one or the other
+                    child[key] = parent1[key] if random.random() < 0.5 else parent2[key]
+        else:
+            # For non-numeric parameters, just select from either parent
+            child[key] = parent1[key] if random.random() < 0.5 else parent2[key]
+    return child
+
+def mutate(params):
+    """Mutate the parameters of a structure"""
+    mutated_params = params.copy()
+    for key in mutated_params.keys():
+        # Different mutation rates for different parameters
+        mutation_prob = 0.2  # 20% chance of mutation
+        
+        if random.random() < mutation_prob:
+            if key == "num_nodes":
+                mutated_params[key] = max(10, mutated_params[key] + random.randint(-5, 5))
+            elif key == "max_actuators":
+                mutated_params[key] = max(2, min(15, mutated_params[key] + random.randint(-2, 2)))
+            elif key == "num_extra_connections":
+                mutated_params[key] = max(0, mutated_params[key] + random.randint(-3, 3))
+            elif key == "rightward_bias":
+                # Keep bias in [0.5, 0.95] range to ensure tendency toward right
+                mutated_params[key] = max(0.5, min(0.95, mutated_params[key] + random.uniform(-0.1, 0.1)))
+            elif key == "actuator_probability":
+                mutated_params[key] = max(0.1, min(0.9, mutated_params[key] + random.uniform(-0.1, 0.1)))
+            elif key == "stiffness":
+                mutated_params[key] = max(200, mutated_params[key] + random.uniform(-100, 100))
+            elif key == "damping":
+                mutated_params[key] = max(0.01, min(0.2, mutated_params[key] + random.uniform(-0.02, 0.02)))
+            elif isinstance(mutated_params[key], float):
+                # Generic float mutation
+                mutated_params[key] += random.uniform(-0.05, 0.05) * mutated_params[key]
+            elif isinstance(mutated_params[key], int):
+                # Generic int mutation
+                mutated_params[key] += random.randint(-2, 2)
+                
+    return mutated_params
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,16 @@
+Parameter,Value
+origin_x,0.10420445356097863
+origin_y,0.01
+y_offset,0.03
+num_nodes,35
+min_distance,0.02
+max_distance,0.09764686068307005
+stiffness,458.67022887627957
+damping,0.0810401977851542
+rightward_bias,0.7108410477250802
+actuator_probability,0.5862116782906426
+max_actuators,2
+extra_connection_probability,0.12322853789316968
+max_connection_distance,0.1614729687056132
+num_extra_connections,16
+particle_spacing,0.021685927028964283
