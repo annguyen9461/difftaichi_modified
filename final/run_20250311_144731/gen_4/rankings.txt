@@ -1,0 +1,8 @@
+Rank 1: Structure 1 with fitness 0.5952025651931763
+Rank 2: Structure 7 with fitness 0.5788092017173767
+Rank 3: Structure 2 with fitness 0.5590140223503113
+Rank 4: Structure 3 with fitness 0.553551435470581
+Rank 5: Structure 4 with fitness 0.5535512566566467
+Rank 6: Structure 6 with fitness 0.5390701293945312
+Rank 7: Structure 8 with fitness 0.5163685083389282
+Rank 8: Structure 5 with fitness 0.5163509249687195

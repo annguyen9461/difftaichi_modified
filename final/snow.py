@@ -154,8 +154,10 @@ def grid_op():
         if i > n_grid - bound and v_out[0] > 0:
             v_out[0] = 0
             v_out[1] = 0
+        # This will allow easier movement in the x-direction
         if j < bound and v_out[1] < 0:
-            v_out[0] = 0
+            # Reduce x-direction friction to facilitate horizontal movement
+            v_out[0] *= 0.9  # Less friction in x-direction
             v_out[1] = 0
             normal = ti.Vector([0.0, 1.0])
             lsq = (normal**2).sum()
@@ -207,20 +209,13 @@ def compute_actuation(t: ti.i32):
     for i in range(n_actuators):
         act = 0.0
         for j in ti.static(range(n_sin_waves)):
-            act += weights[i, j] * ti.sin(actuation_omega * t * dt +
-                                          2 * math.pi / n_sin_waves * j)
+            # Create a phase difference between actuators to encourage wave-like motion
+            phase_offset = 2 * math.pi * i / n_actuators
+            act += weights[i, j] * ti.sin(actuation_omega * t * dt + 
+                                        2 * math.pi / n_sin_waves * j + 
+                                        phase_offset)
         act += bias[i]
         actuation[t, i] = ti.tanh(act)
-
-    # Apply actuation forces to particles
-    # for p in range(n_particles):
-    #     act_id = actuator_id[p]
-    #     if act_id != -1:
-    #         # Apply a horizontal force to make the structure roll
-    #         v[0, p][0] += actuation[t, act_id] * act_strength * dt
-    #         # Apply a vertical force to make the structure bounce
-    #         v[0, p][1] += actuation[t, act_id] * act_strength * dt * 0.5
-
 
 @ti.kernel
 def compute_x_avg():
@@ -236,6 +231,7 @@ def compute_x_avg():
 #     dist = x_avg[None][0]
 #     loss[None] = -dist
 
+# 1. Modify the compute_loss function to prioritize horizontal movement
 @ti.kernel
 def compute_loss():
     # Calculate the center of mass at the final step
@@ -249,11 +245,11 @@ def compute_loss():
             contrib = 1.0 / n_solid_particles
         ti.atomic_add(x_avg_initial, contrib * x[0, i])
     
-    # Calculate the distance traveled (Euclidean distance)
-    distance_traveled = (x_avg_final - x_avg_initial).norm()
+    # Calculate the horizontal distance traveled (x-direction only)
+    distance_traveled_x = x_avg_final[0] - x_avg_initial[0]
     
-    # Define the loss as the negative distance traveled (since we want to maximize distance)
-    loss[None] = -distance_traveled
+    # Define the loss as the negative horizontal distance traveled
+    loss[None] = -distance_traveled_x
 
 @ti.ad.grad_replaced
 def advance(s):
@@ -398,6 +394,18 @@ class Scene:
             new_length = branch_length * params["sub_branch_length_ratio"]
             self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, actuation_start + 1, ptype, params)
 
+        # Add asymmetry to encourage directional movement (more branches on one side)
+        for i in range(params["num_sub_branches"]):
+            # Bias angles toward the right side to encourage rightward movement
+            if i < params["num_sub_branches"] // 2:
+                sub_angle = angle + i * params["sub_branch_angle"]
+            else:
+                # Make right-side branches slightly longer to create asymmetric rolling
+                sub_angle = angle + i * params["sub_branch_angle"]
+                new_length = branch_length * params["sub_branch_length_ratio"] * 1.2
+                
+            self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, 
+                                        actuation_start + 1, ptype, params)
     def finalize(self):
         global n_particles, n_solid_particles, n_actuators
         n_particles = self.n_particles
@@ -447,18 +455,19 @@ def visualize(s, folder):
     gui.show(f'{folder}/{s:04d}.png')
 
 
-def randomize_snowflake_params0():
+def randomize_snowflake_params():
     snowflake_params = {
-        "start_x": random.uniform(0.0, 0.2),
-        "start_y": random.uniform(0.4, 0.6),
-        "depth": random.randint(2, 4),
-        "branch_length": random.uniform(0.03, 0.2),
-        "angle": random.uniform(0, 2 * math.pi),
-        "thickness": random.uniform(0.005, 0.015),
+        "start_x": random.uniform(0.1, 0.2),  # Start more to the left
+        "start_y": random.uniform(0.05, 0.1),  # Start closer to the ground
+        "depth": random.randint(1, 2),
+        "branch_length": random.uniform(0.05, 0.1),
+        "angle": random.uniform(0, math.pi/4),  # Bias toward horizontal branches
+        "thickness": random.uniform(0.005, 0.01),
         "stiffness": random.uniform(400.0, 600.0),
         "damping": random.uniform(0.03, 0.07),
-        "num_sub_branches": random.randint(4, 8),
-        "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
+        "num_sub_branches": random.randint(2, 3),
+        # Make branches tend to grow outward horizontally
+        "sub_branch_angle": random.uniform(-math.pi/6, math.pi/6),  
         "sub_branch_length_ratio": random.uniform(0.5, 0.7),
         "actuation_start": 0,
         "ptype": 1
@@ -578,51 +587,6 @@ import os
 from datetime import datetime
 import shutil
 
-def view_robot():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, required=True, help='Path to the configuration CSV file')
-    parser.add_argument('--steps', type=int, default=1500, help='Number of simulation steps to run')
-    parser.add_argument('--output', type=str, default='visualization', help='Output folder for visualization frames')
-    parser.add_argument('--interval', type=int, default=16, help='Frame interval for visualization')
-    options = parser.parse_args()
-    
-    # Load configuration
-    snowflake_params = load_params_from_csv(options.config)
-    
-    print("Loaded Snowflake Parameters:")
-    for key, value in snowflake_params.items():
-        print(f"{key}: {value}")
-    
-    # Initialize scene with complex robot
-    scene = Scene()
-    create_complex_robot(scene, snowflake_params)
-    
-    # Initialize Taichi fields (already done in main() setup)
-    # We're reusing the allocate_fields from main function
-    
-    # Initialize particle positions, deformation gradient, and velocity
-    for i in range(scene.n_particles):
-        x[0, i] = scene.x[i]
-        F[0, i] = [[1, 0], [0, 1]]
-        actuator_id[i] = scene.actuator_id[i]
-        particle_type[i] = scene.particle_type[i]
-    
-    # Randomize the weights for interesting movement
-    for i in range(n_actuators):
-        for j in range(n_sin_waves):
-            weights[i, j] = np.random.uniform(-1, 1)
-        bias[i] = np.random.uniform(-0.5, 0.5)
-    
-    # Run forward simulation
-    forward(options.steps)
-    
-    # Visualize at intervals
-    os.makedirs(options.output, exist_ok=True)
-    for s in range(15, options.steps, options.interval):
-        visualize(s, options.output)
-    
-    print(f"Visualization frames saved to {options.output}/ folder")
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
@@ -727,9 +691,24 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
                     # Force CUDA synchronization before simulation
                     ti.sync()
                     
+                    # Calculate initial x position
+                    x_initial = 0.0
+                    initial_count = 0
+                    for i in range(scene.n_particles):
+                        if particle_type[i] == 1:
+                            x_initial += x[0, i][0]
+                            initial_count += 1
+                    if initial_count > 0:
+                        x_initial /= initial_count
+                    
                     forward()
-                    compute_loss()
-                    fitness = -loss[None]
+                    
+                    # Use the final x position directly rather than using compute_loss
+                    x_final = x_avg[None][0]  # Get x-coordinate of final position
+                    
+                    # Calculate horizontal distance
+                    horizontal_distance = x_final - x_initial
+                    fitness = horizontal_distance  # Reward horizontal movement
                     
                     # Force synchronization after simulation
                     ti.sync()
@@ -811,19 +790,4 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     return valid_scores[0][1]  # Return the params of the best structure
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--iters', type=int, default=100)
-    parser.add_argument('--population_size', type=int, default=10)
-    parser.add_argument('--num_generations', type=int, default=5)
-    parser.add_argument('--max_particles', type=int, default=5000)
-    parser.add_argument('--view', action='store_true', help='View a saved robot instead of evolving')
-    parser.add_argument('--config', type=str, help='Configuration file path (for viewing)')
-    parser.add_argument('--output', type=str, default='visualization', help='Output folder for visualization')
-    parser.add_argument('--steps', type=int, default=1500, help='Number of steps to run visualization')
-    parser.add_argument('--interval', type=int, default=16, help='Frame interval for visualization')
-    options = parser.parse_args()
-    
-    if options.view:
-        view_robot()
-    else:
-        main()
+    main()
