@@ -231,11 +231,29 @@ def compute_x_avg():
         ti.atomic_add(x_avg[None], contrib * x[steps - 1, i])
 
 
+# @ti.kernel
+# def compute_loss():
+#     dist = x_avg[None][0]
+#     loss[None] = -dist
+
 @ti.kernel
 def compute_loss():
-    dist = x_avg[None][0]
-    loss[None] = -dist
-
+    # Calculate the center of mass at the final step
+    x_avg_final = x_avg[None]
+    
+    # Calculate the center of mass at the initial step
+    x_avg_initial = ti.Vector([0.0, 0.0])
+    for i in range(n_particles):
+        contrib = 0.0
+        if particle_type[i] == 1:
+            contrib = 1.0 / n_solid_particles
+        ti.atomic_add(x_avg_initial, contrib * x[0, i])
+    
+    # Calculate the distance traveled (Euclidean distance)
+    distance_traveled = (x_avg_final - x_avg_initial).norm()
+    
+    # Define the loss as the negative distance traveled (since we want to maximize distance)
+    loss[None] = -distance_traveled
 
 @ti.ad.grad_replaced
 def advance(s):
@@ -429,7 +447,7 @@ def visualize(s, folder):
     gui.show(f'{folder}/{s:04d}.png')
 
 
-def randomize_snowflake_params():
+def randomize_snowflake_params0():
     snowflake_params = {
         "start_x": random.uniform(0.0, 0.2),
         "start_y": random.uniform(0.4, 0.6),
@@ -440,6 +458,45 @@ def randomize_snowflake_params():
         "stiffness": random.uniform(400.0, 600.0),
         "damping": random.uniform(0.03, 0.07),
         "num_sub_branches": random.randint(4, 8),
+        "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
+        "sub_branch_length_ratio": random.uniform(0.5, 0.7),
+        "actuation_start": 0,
+        "ptype": 1
+    }
+    return snowflake_params
+
+# Add this function to estimate particle count before creating the structure
+def estimate_particle_count(params):
+    """Roughly estimate the number of particles for a given parameter set"""
+    points_per_branch = max(5, int(params["branch_length"] / dx * 4))
+    particles_per_point = 3  # From the perpendicular thickness
+    
+    # Recursive formula for branch count in a tree structure
+    # For a depth d with b sub-branches: total = 1 + b + b^2 + ... + b^(d-1)
+    # This simplifies to (b^d - 1)/(b - 1) for b > 1
+    d = params["depth"]
+    b = params["num_sub_branches"]
+    if b == 1:
+        total_branches = d
+    else:
+        total_branches = (b**d - 1) // (b - 1)
+    
+    # Estimate total particle count
+    total_particles = total_branches * points_per_branch * particles_per_point
+    return total_particles
+
+def randomize_snowflake_params():
+    snowflake_params = {
+        "start_x": random.uniform(0.1, 0.3),
+        "start_y": random.uniform(0.4, 0.6),
+        # Reduce complexity to prevent CUDA memory issues
+        "depth": random.randint(1, 2),  # Maximum depth of 2 
+        "branch_length": random.uniform(0.05, 0.1),  # Shorter branches
+        "angle": random.uniform(0, 2 * math.pi),
+        "thickness": random.uniform(0.005, 0.01),
+        "stiffness": random.uniform(400.0, 600.0),
+        "damping": random.uniform(0.03, 0.07),
+        "num_sub_branches": random.randint(2, 3),  # Fewer branches
         "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
         "sub_branch_length_ratio": random.uniform(0.5, 0.7),
         "actuation_start": 0,
@@ -480,124 +537,233 @@ def load_params_from_csv(filename):
             else:
                 params[key] = value
     return params
-        
+
+def crossover(parent1, parent2):
+    # Implement crossover logic (e.g., mix parameters from both parents)
+    child = {}
+    for key in parent1.keys():
+        if random.random() < 0.5:
+            child[key] = parent1[key]
+        else:
+            child[key] = parent2[key]
+    return child
+
+def mutate(params):
+    # Implement mutation logic (e.g., randomly change some parameters)
+    for key in params.keys():
+        if random.random() < 0.1:  # 10% mutation rate
+            if isinstance(params[key], int):
+                params[key] += random.randint(-1, 1)
+            elif isinstance(params[key], float):
+                params[key] += random.uniform(-0.1, 0.1)
+    return params
+
+def reset_fields():
+    """Reset Taichi fields to their initial state."""
+    global x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
+    x.fill(0)
+    v.fill(0)
+    C.fill([[0, 0], [0, 0]])
+    F.fill([[1, 0], [0, 1]])
+    grid_v_in.fill([0, 0])
+    grid_m_in.fill(0)
+    grid_v_out.fill([0, 0])
+    actuation.fill(0)
+    weights.fill(0)
+    bias.fill(0)
+    loss[None] = 0
+    x_avg[None] = [0, 0]
+
+import os
+from datetime import datetime
+import shutil
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
+    parser.add_argument('--population_size', type=int, default=10)
+    parser.add_argument('--num_generations', type=int, default=5)
+    parser.add_argument('--max_particles', type=int, default=2000)  # Reduced from 5000
     options = parser.parse_args()
 
-    # Define snowflake parameters
-    # snowflake_params = {
-    #     "start_x": 0.1,
-    #     "start_y": 0.5,
-    #     "depth": 3,
-    #     "branch_length": 0.1,
-    #     "angle": 0,
-    #     "thickness": 0.02,
-    #     "stiffness": 500.0,
-    #     "damping": 0.05,
-    #     "num_sub_branches": 6,
-    #     "sub_branch_angle": math.pi / 3,
-    #     "sub_branch_length_ratio": 0.6,
-    #     "actuation_start": 0,
-    #     "ptype": 1
-    # }
+    # Create a folder for this run with the current timestamp
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_folder = f"run_{current_time}"
+    os.makedirs(run_folder, exist_ok=True)
 
-    # smaller snowflake
-    # snowflake_params = {
-    #     "start_x": 0.1,
-    #     "start_y": 0.5,
-    #     "depth": 2,  # Reduced depth for fewer branches
-    #     "branch_length": 0.05,  # Reduced branch length for a smaller snowflake
-    #     "angle": 0,
-    #     "thickness": 0.01,  # Reduced thickness for thinner branches
-    #     "stiffness": 500.0,
-    #     "damping": 0.05,
-    #     "num_sub_branches": 6,
-    #     "sub_branch_angle": math.pi / 3,
-    #     "sub_branch_length_ratio": 0.6,
-    #     "actuation_start": 0,
-    #     "ptype": 1
-    # }
+    # Initialize with reasonable limits
+    global n_particles, n_solid_particles, n_actuators
+    n_particles = options.max_particles
+    n_solid_particles = options.max_particles
+    n_actuators = 10  # Set a safe upper limit
     
-    # PARAMS FROM FILE
-    # Load parameters from a CSV file
-    # meh
-    # filename = "config/snowflake_config_20250304_111823.csv"
-    # filename = "config/snowflake_config_20250304_095109.csv"
+    try:
+        # Initialize Taichi and allocate fields
+        ti.init(default_fp=real, arch=ti.gpu, flatten_if=True, device_memory_fraction=0.7)  # Limit GPU memory usage
+        allocate_fields()
 
+        # Run evolutionary optimization
+        best_structure = evolutionary_optimization(
+            population_size=options.population_size,
+            num_generations=options.num_generations,
+            run_folder=run_folder,
+            max_particles=options.max_particles
+        )
 
-    # broken
-    # filename = "config/snowflake_config_20250304_104434.csv"
-    # filename = "config/snowflake_config_20250304_095003.csv"
+        print("Best structure found:")
+        for key, value in best_structure.items():
+            print(f"{key}: {value}")
 
-    # intesting
-    # filename = "config/snowflake_config_20250304_114509.csv"
-
-    # filename = "run_20250311_133620/best_structure.csv/snowflake_config_20250311_133631.csv"
-    # filename = "run_20250311_133620/gen_1/structure_1.csv/snowflake_config_20250311_133621.csv"
-    filename = "run_20250311_133620/gen_1/structure_2.csv/snowflake_config_20250311_133621.csv"
-    snowflake_params = load_params_from_csv(filename)
-
-    # # Print the loaded parameters
-    # print("Loaded Snowflake Parameters:")
-    # for key, value in snowflake_params.items():
-    #     print(f"{key}: {value}")
-
-##############################   UNCOMMENT FOR RANDOM  ##############################
-    # # PARAMS FROM RANDOM
-    # snowflake_params = randomize_snowflake_params()
-    
-    # # Print the randomized parameters
-    # print("Randomized Snowflake Parameters:")
-    # for key, value in snowflake_params.items():
-    #     print(f"{key}: {value}")
+        # Save the best structure's configuration
+        best_config_file = os.path.join(run_folder, "best_structure.csv")
+        save_params_to_csv(best_structure, best_config_file)
+        print(f"Best structure configuration saved to {best_config_file}")
         
-    # # Save the randomized parameters to a file
-    # save_params_to_csv(snowflake_params, "config")
-##############################   UNCOMMENT FOR RANDOM  ##############################
+    except Exception as e:
+        print(f"Error in main process: {e}")
+        
+    finally:
+        # Clean up Taichi resources to prevent CUDA errors
+        print("Cleaning up resources...")
+        # This explicit call to reset and garbage collection can help prevent CUDA errors
+        import gc
+        gc.collect()
+        try:
+            ti.reset()
+        except:
+            print("Warning: Error during ti.reset(). This is expected if CUDA resources are already freed.")
+        print("Done!")
+        
+def evolutionary_optimization(population_size, num_generations, run_folder, max_particles):
+    population = [randomize_snowflake_params() for _ in range(population_size)]
+    all_fitness_scores = []
+    
+    for generation in range(num_generations):
+        print(f"Generation {generation + 1}/{num_generations}")
+        fitness_scores = []
+        gen_folder = os.path.join(run_folder, f"gen_{generation + 1}")
+        os.makedirs(gen_folder, exist_ok=True)
 
+        for idx, params in enumerate(population):
+            print(f"Evaluating structure {idx + 1}/{population_size}")
+            
+            # Pre-check estimated particle count
+            est_particles = estimate_particle_count(params)
+            if est_particles > max_particles * 0.9:  # 90% safety margin
+                print(f"Estimated particles ({est_particles}) exceeds limit. Simplifying structure.")
+                if params["depth"] > 1:
+                    params["depth"] -= 1
+                if params["num_sub_branches"] > 2:
+                    params["num_sub_branches"] -= 1
+            
+            # Create scene with safety check
+            try:
+                scene = Scene()
+                create_complex_robot(scene, params)
+                
+                # Skip if too many particles
+                if scene.n_particles > max_particles:
+                    print(f"Structure {idx + 1} has too many particles ({scene.n_particles}). Skipping.")
+                    fitness_scores.append(-1000)  # Penalize overly complex structures
+                    continue
+                
+                # Reset fields before each simulation
+                reset_fields()
 
-    # Initialize scene with complex robot
-    scene = Scene()
-    create_complex_robot(scene, snowflake_params)  # Pass the parameters
-    scene.finalize()
-    allocate_fields()
+                # Initialize particle positions
+                for i in range(scene.n_particles):
+                    x[0, i] = scene.x[i]
+                    F[0, i] = [[1, 0], [0, 1]]
+                    actuator_id[i] = scene.actuator_id[i]
+                    particle_type[i] = scene.particle_type[i]
+                
+                # Run simulation and compute fitness
+                try:
+                    # Force CUDA synchronization before simulation
+                    ti.sync()
+                    
+                    forward()
+                    compute_loss()
+                    fitness = -loss[None]
+                    
+                    # Force synchronization after simulation
+                    ti.sync()
+                    
+                    # Add a small delay to let GPU recover
+                    import time
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    print(f"Error during simulation: {e}")
+                    fitness = -1000  # Penalize failed simulations
+                
+                fitness_scores.append(fitness)
+                all_fitness_scores.append((fitness, params))
 
-    # Initialize particle positions, deformation gradient, and velocity
-    for i in range(scene.n_particles):
-        x[0, i] = scene.x[i]
-        F[0, i] = [[1, 0], [0, 1]]
-        actuator_id[i] = scene.actuator_id[i]
-        particle_type[i] = scene.particle_type[i]
+                # Save the configuration and fitness score
+                config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
+                save_params_to_csv(params, config_file)
+                with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
+                    f.write(f"Structure {idx + 1}: {fitness}\n")
+                    
+                # Explicit garbage collection
+                import gc
+                gc.collect()
+                    
+            except Exception as e:
+                print(f"Error creating structure {idx + 1}: {e}")
+                fitness_scores.append(-1000)
+                continue
 
-    # Optimization loop
-    losses = []
-    for iter in range(options.iters):
-        with ti.ad.Tape(loss):
-            forward()
-        l = loss[None]
-        losses.append(l)
-        print('i=', iter, 'loss=', l)
-        learning_rate = 0.1
+        # Check if we have any valid structures
+        if all(score == -1000 for score in fitness_scores):
+            print("No valid structures in this generation. Generating new population.")
+            population = [randomize_snowflake_params() for _ in range(population_size)]
+            continue
 
-        for i in range(n_actuators):
-            for j in range(n_sin_waves):
-                weights[i, j] -= learning_rate * weights.grad[i, j]
-            bias[i] -= learning_rate * bias.grad[i]
+        # Rank the structures in this generation
+        ranked_indices = np.argsort(fitness_scores)[::-1]  # Sort in descending order
+        for rank, idx in enumerate(ranked_indices):
+            if fitness_scores[idx] > -1000:  # Only report valid structures
+                print(f"Rank {rank + 1}: Structure {idx + 1} with fitness {fitness_scores[idx]}")
+                # Save ranking information
+                with open(os.path.join(gen_folder, "rankings.txt"), "a") as f:
+                    f.write(f"Rank {rank + 1}: Structure {idx + 1} with fitness {fitness_scores[idx]}\n")
 
-        if iter % 10 == 0:
-            # Visualize
-            forward(1500)
-            for s in range(15, 1500, 16):
-                visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
+        # Select top-performing structures for the next generation
+        valid_structures = [(i, population[i]) for i in ranked_indices if fitness_scores[i] > -1000]
+        if not valid_structures:
+            print("No valid structures to select from. Generating new population.")
+            population = [randomize_snowflake_params() for _ in range(population_size)]
+            continue
+            
+        top_structures = [params for _, params in valid_structures[:max(1, population_size // 2)]]
 
-    # Plot loss
-    plt.title("Optimization of Initial Velocity")
-    plt.ylabel("Loss")
-    plt.xlabel("Gradient Descent Iterations")
-    plt.plot(losses)
-    plt.show()
+        # Create new population through mutation and crossover
+        new_population = top_structures.copy()
+        while len(new_population) < population_size:
+            if len(top_structures) >= 2:
+                parent1, parent2 = random.sample(top_structures, 2)
+                child = crossover(parent1, parent2)
+            else:
+                child = top_structures[0].copy()
+            child = mutate(child)
+            new_population.append(child)
+
+        population = new_population
+
+        # Force CUDA synchronization and garbage collection between generations
+        ti.sync()
+        gc.collect()
+
+    # Return the best structure found across all generations
+    valid_scores = [(score, params) for score, params in all_fitness_scores if score > -1000]
+    if not valid_scores:
+        return randomize_snowflake_params()  # Return a random structure if all failed
+        
+    # Sort by score only (not by the dictionary)
+    valid_scores.sort(key=lambda x: x[0], reverse=True)
+    return valid_scores[0][1]  # Return the params of the best structure
 
 if __name__ == '__main__':
     main()

@@ -578,6 +578,51 @@ import os
 from datetime import datetime
 import shutil
 
+def view_robot():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, required=True, help='Path to the configuration CSV file')
+    parser.add_argument('--steps', type=int, default=1500, help='Number of simulation steps to run')
+    parser.add_argument('--output', type=str, default='visualization', help='Output folder for visualization frames')
+    parser.add_argument('--interval', type=int, default=16, help='Frame interval for visualization')
+    options = parser.parse_args()
+    
+    # Load configuration
+    snowflake_params = load_params_from_csv(options.config)
+    
+    print("Loaded Snowflake Parameters:")
+    for key, value in snowflake_params.items():
+        print(f"{key}: {value}")
+    
+    # Initialize scene with complex robot
+    scene = Scene()
+    create_complex_robot(scene, snowflake_params)
+    
+    # Initialize Taichi fields (already done in main() setup)
+    # We're reusing the allocate_fields from main function
+    
+    # Initialize particle positions, deformation gradient, and velocity
+    for i in range(scene.n_particles):
+        x[0, i] = scene.x[i]
+        F[0, i] = [[1, 0], [0, 1]]
+        actuator_id[i] = scene.actuator_id[i]
+        particle_type[i] = scene.particle_type[i]
+    
+    # Randomize the weights for interesting movement
+    for i in range(n_actuators):
+        for j in range(n_sin_waves):
+            weights[i, j] = np.random.uniform(-1, 1)
+        bias[i] = np.random.uniform(-0.5, 0.5)
+    
+    # Run forward simulation
+    forward(options.steps)
+    
+    # Visualize at intervals
+    os.makedirs(options.output, exist_ok=True)
+    for s in range(15, options.steps, options.interval):
+        visualize(s, options.output)
+    
+    print(f"Visualization frames saved to {options.output}/ folder")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
@@ -766,4 +811,19 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     return valid_scores[0][1]  # Return the params of the best structure
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--iters', type=int, default=100)
+    parser.add_argument('--population_size', type=int, default=10)
+    parser.add_argument('--num_generations', type=int, default=5)
+    parser.add_argument('--max_particles', type=int, default=5000)
+    parser.add_argument('--view', action='store_true', help='View a saved robot instead of evolving')
+    parser.add_argument('--config', type=str, help='Configuration file path (for viewing)')
+    parser.add_argument('--output', type=str, default='visualization', help='Output folder for visualization')
+    parser.add_argument('--steps', type=int, default=1500, help='Number of steps to run visualization')
+    parser.add_argument('--interval', type=int, default=16, help='Frame interval for visualization')
+    options = parser.parse_args()
+    
+    if options.view:
+        view_robot()
+    else:
+        main()

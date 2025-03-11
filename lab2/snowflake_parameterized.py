@@ -534,8 +534,8 @@ def main():
     # intesting
     # filename = "config/snowflake_config_20250304_114509.csv"
 
-    filename = "a1.csv"
-    snowflake_params = load_params_from_csv(filename)
+    # filename = "a1.csv"
+    # snowflake_params = load_params_from_csv(filename)
 
     # # Print the loaded parameters
     # print("Loaded Snowflake Parameters:")

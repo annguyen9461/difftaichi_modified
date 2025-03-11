@@ -20,20 +20,20 @@ n_particles 354
 n_solid 354
 n_actuators 2
 Traceback (most recent call last):
-  File "/home/annguyen/classes/artificial-life/difftaichi_modified/final/view_robot.py", line 103, in <module>
+  File "/home/usr/classes/artificial-life/difftaichi_modified/final/view_robot.py", line 103, in <module>
     main()
-  File "/home/annguyen/classes/artificial-life/difftaichi_modified/final/view_robot.py", line 81, in main
+  File "/home/usr/classes/artificial-life/difftaichi_modified/final/view_robot.py", line 81, in main
     x[0, i] = scene.x[i]
     ~^^^^^^
-  File "/home/annguyen/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/util.py", line 351, in wrapped
+  File "/home/usr/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/util.py", line 351, in wrapped
     return func(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/annguyen/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/matrix.py", line 1357, in __setitem__
+  File "/home/usr/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/matrix.py", line 1357, in __setitem__
     self._initialize_host_accessors()
-  File "/home/annguyen/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/field.py", line 263, in _initialize_host_accessors
+  File "/home/usr/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/field.py", line 263, in _initialize_host_accessors
     self.host_accessors = [SNodeHostAccessor(e.ptr.snode()) for e in self.vars]
                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/annguyen/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/field.py", line 387, in __init__
+  File "/home/usr/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/field.py", line 387, in __init__
     if _ti_core.is_real(snode.data_type()):
                         ^^^^^^^^^^^^^^^
 AttributeError: 'NoneType' object has no attribute 'data_type'
