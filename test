@@ -1,69 +1,16 @@
-python snow.py --population_size 10 --num_generations 2
-[Taichi] version 1.7.3, llvm 15.0.4, commit 5ec301be, linux, python 3.12.3
-[Taichi] Starting on arch=cuda
-Generation 1/2
-Evaluating structure 1/10
-n_particles 1236
-n_solid 1236
+Visualizing top structure in generation 5
+Close the visualization window to continue to the next generation.
+n_particles 792
+n_solid 792
 n_actuators 3
-Configuration saved to run_20250311_114808/gen_1/gen1_robot_1_20250311_114809.csv/snowflake_config_20250311_114809.csv
-Evaluating structure 2/10
-n_particles 4092
-n_solid 4092
-n_actuators 3
-Configuration saved to run_20250311_114808/gen_1/gen1_robot_2_20250311_114810.csv/snowflake_config_20250311_114810.csv
-Evaluating structure 3/10
-n_particles 21759
-n_solid 21759
-n_actuators 4
-Configuration saved to run_20250311_114808/gen_1/gen1_robot_3_20250311_114811.csv/snowflake_config_20250311_114811.csv
-Evaluating structure 4/10
-n_particles 2286
-n_solid 2286
-n_actuators 3
-Configuration saved to run_20250311_114808/gen_1/gen1_robot_4_20250311_114811.csv/snowflake_config_20250311_114811.csv
-Evaluating structure 5/10
-n_particles 837
-n_solid 837
-n_actuators 2
-Configuration saved to run_20250311_114808/gen_1/gen1_robot_5_20250311_114811.csv/snowflake_config_20250311_114811.csv
-Evaluating structure 6/10
-n_particles 768
-n_solid 768
-n_actuators 2
-[E 03/11/25 11:48:12.073 40623] [cuda_driver.h:operator()@92] CUDA Error CUDA_ERROR_ILLEGAL_ADDRESS: an illegal memory access was encountered while calling mem_free_async_impl (cuMemFreeAsync)
-
-
+Displaying robot simulation. Close the window or press any key to continue...
+Error visualizing top structure: 
 Traceback (most recent call last):
-  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 690, in <module>
+  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 835, in <module>
     main()
-  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 565, in main
+  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 583, in main
     best_structure = evolutionary_optimization(
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 620, in evolutionary_optimization
-    forward()
-  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 282, in forward
-    advance(s)
-  File "/home/user/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/ad/_ad.py", line 341, in decorated
-    func(*args, **kwargs)
-  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 261, in advance
-    compute_actuation(s)
-  File "/home/user/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/kernel_impl.py", line 1113, in wrapped
-    return primal(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/user/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/kernel_impl.py", line 1045, in __call__
-    return self.launch_kernel(kernel_cpp, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/user/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/kernel_impl.py", line 976, in launch_kernel
-    raise e from None
-  File "/home/user/classes/artificial-life/myenv/lib/python3.12/site-packages/taichi/lang/kernel_impl.py", line 971, in launch_kernel
-    prog.launch_kernel(compiled_kernel_data, launch_ctx)
-RuntimeError: [cuda_driver.h:operator()@92] CUDA Error CUDA_ERROR_ILLEGAL_ADDRESS: an illegal memory access was encountered while calling mem_free_async_impl (cuMemFreeAsync)
-[E 03/11/25 11:48:12.109 40623] [cuda_driver.h:operator()@92] CUDA Error CUDA_ERROR_ILLEGAL_ADDRESS: an illegal memory access was encountered while calling stream_synchronize (cuStreamSynchronize)
-
-
-[E 03/11/25 11:48:12.110 40623] [cuda_driver.h:operator()@92] CUDA Error CUDA_ERROR_ILLEGAL_ADDRESS: an illegal memory access was encountered while calling mem_free (cuMemFree_v2)
-
-
-terminate called after throwing an instance of 'std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >'
-Aborted
+  File "/home/user/classes/artificial-life/difftaichi_modified/final/snow.py", line 712, in evolutionary_optimization
+    valid_scores.sort(reverse=True)
+TypeError: '<' not supported between instances of 'dict' and 'dict'

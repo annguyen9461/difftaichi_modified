@@ -533,23 +533,27 @@ def main():
 
     # intesting
     # filename = "config/snowflake_config_20250304_114509.csv"
-    # snowflake_params = load_params_from_csv(filename)
+
+    filename = "a1.csv"
+    snowflake_params = load_params_from_csv(filename)
 
     # # Print the loaded parameters
     # print("Loaded Snowflake Parameters:")
     # for key, value in snowflake_params.items():
     #     print(f"{key}: {value}")
 
-    # PARAMS FROM RANDOM
-    snowflake_params = randomize_snowflake_params()
+##############################   UNCOMMENT FOR RANDOM  ##############################
+    # # PARAMS FROM RANDOM
+    # snowflake_params = randomize_snowflake_params()
     
-    # Print the randomized parameters
-    print("Randomized Snowflake Parameters:")
-    for key, value in snowflake_params.items():
-        print(f"{key}: {value}")
+    # # Print the randomized parameters
+    # print("Randomized Snowflake Parameters:")
+    # for key, value in snowflake_params.items():
+    #     print(f"{key}: {value}")
         
-    # Save the randomized parameters to a file
-    save_params_to_csv(snowflake_params, "config")
+    # # Save the randomized parameters to a file
+    # save_params_to_csv(snowflake_params, "config")
+##############################   UNCOMMENT FOR RANDOM  ##############################
 
 
     # Initialize scene with complex robot
