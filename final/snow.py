@@ -465,17 +465,38 @@ def randomize_snowflake_params0():
     }
     return snowflake_params
 
+# Add this function to estimate particle count before creating the structure
+def estimate_particle_count(params):
+    """Roughly estimate the number of particles for a given parameter set"""
+    points_per_branch = max(5, int(params["branch_length"] / dx * 4))
+    particles_per_point = 3  # From the perpendicular thickness
+    
+    # Recursive formula for branch count in a tree structure
+    # For a depth d with b sub-branches: total = 1 + b + b^2 + ... + b^(d-1)
+    # This simplifies to (b^d - 1)/(b - 1) for b > 1
+    d = params["depth"]
+    b = params["num_sub_branches"]
+    if b == 1:
+        total_branches = d
+    else:
+        total_branches = (b**d - 1) // (b - 1)
+    
+    # Estimate total particle count
+    total_particles = total_branches * points_per_branch * particles_per_point
+    return total_particles
+
 def randomize_snowflake_params():
     snowflake_params = {
         "start_x": random.uniform(0.1, 0.3),
         "start_y": random.uniform(0.4, 0.6),
-        "depth": random.randint(1, 3),  # Reduced max depth
-        "branch_length": random.uniform(0.05, 0.15),
+        # Reduce complexity to prevent CUDA memory issues
+        "depth": random.randint(1, 2),  # Maximum depth of 2 
+        "branch_length": random.uniform(0.05, 0.1),  # Shorter branches
         "angle": random.uniform(0, 2 * math.pi),
         "thickness": random.uniform(0.005, 0.01),
         "stiffness": random.uniform(400.0, 600.0),
         "damping": random.uniform(0.03, 0.07),
-        "num_sub_branches": random.randint(2, 5),  # Reduced max branches
+        "num_sub_branches": random.randint(2, 3),  # Fewer branches
         "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
         "sub_branch_length_ratio": random.uniform(0.5, 0.7),
         "actuation_start": 0,
@@ -562,7 +583,7 @@ def main():
     parser.add_argument('--iters', type=int, default=100)
     parser.add_argument('--population_size', type=int, default=10)
     parser.add_argument('--num_generations', type=int, default=5)
-    parser.add_argument('--max_particles', type=int, default=5000)  # Add max particles parameter
+    parser.add_argument('--max_particles', type=int, default=2000)  # Reduced from 5000
     options = parser.parse_args()
 
     # Create a folder for this run with the current timestamp
@@ -576,118 +597,64 @@ def main():
     n_solid_particles = options.max_particles
     n_actuators = 10  # Set a safe upper limit
     
-    # Allocate fields just once
-    allocate_fields()
+    try:
+        # Initialize Taichi and allocate fields
+        ti.init(default_fp=real, arch=ti.gpu, flatten_if=True, device_memory_fraction=0.7)  # Limit GPU memory usage
+        allocate_fields()
 
-    # Run evolutionary optimization
-    best_structure = evolutionary_optimization(
-        population_size=options.population_size,
-        num_generations=options.num_generations,
-        run_folder=run_folder,
-        max_particles=options.max_particles
-    )
+        # Run evolutionary optimization
+        best_structure = evolutionary_optimization(
+            population_size=options.population_size,
+            num_generations=options.num_generations,
+            run_folder=run_folder,
+            max_particles=options.max_particles
+        )
 
-    print("Best structure found:")
-    for key, value in best_structure.items():
-        print(f"{key}: {value}")
+        print("Best structure found:")
+        for key, value in best_structure.items():
+            print(f"{key}: {value}")
 
-    # Save the best structure's configuration
-    best_config_file = os.path.join(run_folder, "best_structure.csv")
-    save_params_to_csv(best_structure, best_config_file)
-
-    print(f"Best structure configuration saved to {best_config_file}")
-
-def display_top_structure(params, gen_folder, max_particles):
-    """Simulate and visualize the top structure in a generation with a pop-up window.
-    Uses the exact same approach as the reference code's main visualization function."""
-    
-    # Create scene and robot
-    scene = Scene()
-    create_complex_robot(scene, params)
-    
-    # Skip if too many particles
-    if scene.n_particles > max_particles:
-        print(f"Top structure has too many particles ({scene.n_particles}). Skipping visualization.")
-        return
-    
-    # Reset fields before simulation
-    reset_fields()
-
-    # Initialize particle positions
-    for i in range(scene.n_particles):
-        x[0, i] = scene.x[i]
-        F[0, i] = [[1, 0], [0, 1]]
-        actuator_id[i] = scene.actuator_id[i]
-        particle_type[i] = scene.particle_type[i]
-
-    # Create visualization directory
-    vis_folder = os.path.join(gen_folder, "visualization")
-    os.makedirs(vis_folder, exist_ok=True)
-
-    # Set steps for simulation - shorter for quick feedback
-    steps_to_run = 200
-    
-    print("\nRunning simulation for visualization...")
-    # Run the simulation to generate all states
-    for s in range(steps_to_run - 1):
-        advance(s)
-    
-    print("Starting visualization... (Close window to continue)")
-    
-    # Display each frame, exactly like the reference code
-    for s in range(5, steps_to_run, 5):  # Skip some frames for speed
-        aid = actuator_id.to_numpy()
+        # Save the best structure's configuration
+        best_config_file = os.path.join(run_folder, "best_structure.csv")
+        save_params_to_csv(best_structure, best_config_file)
+        print(f"Best structure configuration saved to {best_config_file}")
         
-        # Get the particles for this step
-        particles = x.to_numpy()[s]
-        n_visible = min(n_particles, len(particles))  # Get actual number of particles to display
+    except Exception as e:
+        print(f"Error in main process: {e}")
         
-        # Create colors array with correct shape
-        colors = np.empty(n_visible, dtype=np.uint32)
+    finally:
+        # Clean up Taichi resources to prevent CUDA errors
+        print("Cleaning up resources...")
+        # This explicit call to reset and garbage collection can help prevent CUDA errors
+        import gc
+        gc.collect()
+        try:
+            ti.reset()
+        except:
+            print("Warning: Error during ti.reset(). This is expected if CUDA resources are already freed.")
+        print("Done!")
         
-        # Get actuation values
-        actuation_ = actuation.to_numpy()
-        
-        # Set colors for each particle
-        for i in range(n_visible):
-            color = 0x111111
-            if i < len(aid) and aid[i] != -1:
-                act_id = int(aid[i])
-                if act_id >= 0 and s > 0 and act_id < len(actuation_[s-1]):
-                    act = actuation_[s-1, act_id]
-                    color = ti.rgb_to_hex((0.5 - act, 0.5 - abs(act), 0.5 + act))
-            colors[i] = color
-        
-        # Draw exactly as in the reference but with n_visible particles
-        gui.circles(pos=particles[:n_visible], color=colors, radius=1.5)
-        gui.line((0.05, 0.02), (0.95, 0.02), radius=3, color=0x0)
-        
-        # Save and show the frame
-        filename = f'{vis_folder}/{s:04d}.png'
-        gui.show(filename)
-        
-        # Check if window was closed
-        if not gui.running:
-            break
-            
-        # Slow down the visualization slightly
-        import time
-        time.sleep(0.05)
-    
-    print(f"Visualization complete. Frames saved to {vis_folder}")
-
 def evolutionary_optimization(population_size, num_generations, run_folder, max_particles):
     population = [randomize_snowflake_params() for _ in range(population_size)]
     all_fitness_scores = []
     
     for generation in range(num_generations):
-        print(f"\n=== Generation {generation + 1}/{num_generations} ===")
+        print(f"Generation {generation + 1}/{num_generations}")
         fitness_scores = []
         gen_folder = os.path.join(run_folder, f"gen_{generation + 1}")
         os.makedirs(gen_folder, exist_ok=True)
 
         for idx, params in enumerate(population):
             print(f"Evaluating structure {idx + 1}/{population_size}")
+            
+            # Pre-check estimated particle count
+            est_particles = estimate_particle_count(params)
+            if est_particles > max_particles * 0.9:  # 90% safety margin
+                print(f"Estimated particles ({est_particles}) exceeds limit. Simplifying structure.")
+                if params["depth"] > 1:
+                    params["depth"] -= 1
+                if params["num_sub_branches"] > 2:
+                    params["num_sub_branches"] -= 1
             
             # Create scene with safety check
             try:
@@ -703,7 +670,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
                 # Reset fields before each simulation
                 reset_fields()
 
-                # Initialize particle positions, deformation gradient, and velocity
+                # Initialize particle positions
                 for i in range(scene.n_particles):
                     x[0, i] = scene.x[i]
                     F[0, i] = [[1, 0], [0, 1]]
@@ -712,21 +679,36 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
                 
                 # Run simulation and compute fitness
                 try:
+                    # Force CUDA synchronization before simulation
+                    ti.sync()
+                    
                     forward()
                     compute_loss()
                     fitness = -loss[None]
+                    
+                    # Force synchronization after simulation
+                    ti.sync()
+                    
+                    # Add a small delay to let GPU recover
+                    import time
+                    time.sleep(0.1)
+                    
                 except Exception as e:
                     print(f"Error during simulation: {e}")
                     fitness = -1000  # Penalize failed simulations
                 
                 fitness_scores.append(fitness)
-                all_fitness_scores.append((fitness, params))  # Store as tuple
+                all_fitness_scores.append((fitness, params))
 
                 # Save the configuration and fitness score
                 config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
                 save_params_to_csv(params, config_file)
                 with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
                     f.write(f"Structure {idx + 1}: {fitness}\n")
+                    
+                # Explicit garbage collection
+                import gc
+                gc.collect()
                     
             except Exception as e:
                 print(f"Error creating structure {idx + 1}: {e}")
@@ -747,19 +729,6 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
                 # Save ranking information
                 with open(os.path.join(gen_folder, "rankings.txt"), "a") as f:
                     f.write(f"Rank {rank + 1}: Structure {idx + 1} with fitness {fitness_scores[idx]}\n")
-
-        # Visualize the top structure in this generation if valid
-        top_structure_idx = ranked_indices[0]
-        if fitness_scores[top_structure_idx] > -1000:
-            top_params = population[top_structure_idx]
-            print(f"\nVisualizing top structure in generation {generation + 1}")
-            print(f"Close the visualization window to continue to the next generation.")
-            try:
-                # Use the simpler visualization approach
-                display_top_structure(top_params, gen_folder, max_particles)
-            except Exception as e:
-                import traceback
-                print(f"Error visualizing top structure: {traceback.format_exc()}")
 
         # Select top-performing structures for the next generation
         valid_structures = [(i, population[i]) for i in ranked_indices if fitness_scores[i] > -1000]
@@ -783,68 +752,18 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
 
         population = new_population
 
+        # Force CUDA synchronization and garbage collection between generations
+        ti.sync()
+        gc.collect()
+
     # Return the best structure found across all generations
-    # Fix the sorting problem by ensuring we're sorting tuples by their first element (fitness)
     valid_scores = [(score, params) for score, params in all_fitness_scores if score > -1000]
     if not valid_scores:
         return randomize_snowflake_params()  # Return a random structure if all failed
         
-    valid_scores.sort(key=lambda x: x[0], reverse=True)  # Sort by fitness (first element of tuple)
+    # Sort by score only (not by the dictionary)
+    valid_scores.sort(key=lambda x: x[0], reverse=True)
     return valid_scores[0][1]  # Return the params of the best structure
-
-def visualize_top_structure(params, gen_folder, max_particles):
-    """Simulate and visualize the top structure in a generation."""
-    scene = Scene()
-    create_complex_robot(scene, params)
-    
-    # Skip if too many particles
-    if scene.n_particles > max_particles:
-        print(f"Top structure has too many particles ({scene.n_particles}). Skipping visualization.")
-        return
-    
-    # Reset fields before simulation
-    reset_fields()
-
-    # Initialize particle positions
-    for i in range(scene.n_particles):
-        x[0, i] = scene.x[i]
-        F[0, i] = [[1, 0], [0, 1]]
-        actuator_id[i] = scene.actuator_id[i]
-        particle_type[i] = scene.particle_type[i]
-
-    # Run simulation and show visualization interactively
-    steps_to_run = min(500, steps)  # Use fewer steps for visualization
-    vis_folder = os.path.join(gen_folder, "visualization")
-    os.makedirs(vis_folder, exist_ok=True)
-    
-    for s in range(steps_to_run - 1):
-        advance(s)
-        if s % 10 == 0:  # Show every 10 steps to make it more responsive
-            aid = actuator_id.to_numpy()
-            colors = np.empty(shape=n_particles, dtype=np.uint32)
-            particles = x.to_numpy()[s]
-            actuation_ = actuation.to_numpy()
-            for i in range(n_particles):
-                color = 0x111111
-                if aid[i] != -1:
-                    act = actuation_[s - 1, int(aid[i])]
-                    color = ti.rgb_to_hex((0.5 - act, 0.5 - abs(act), 0.5 + act))
-                colors[i] = color
-            gui.circles(pos=particles, color=colors, radius=1.5)
-            gui.line((0.05, 0.02), (0.95, 0.02), radius=3, color=0x0)
-            
-            # Save the frame
-            filename = f'{vis_folder}/{s:04d}.png'
-            gui.show(filename)
-            
-            # Add a small pause to make the visualization visible
-            # This is a blocking operation so the simulation will pause briefly
-            import time
-            time.sleep(0.05)
-    
-    # Save a message about the visualization location
-    print(f"Visualization frames saved to {vis_folder}")
-    print("You can view these frames as a sequence or convert them to a video.")
 
 if __name__ == '__main__':
     main()
