@@ -53,6 +53,120 @@ actuation_omega = 20
 act_strength = 4
 
 
+# Four different template parameter sets that work well
+PARAM_TEMPLATES = [
+    # Horizontal crawler with right bias
+    {
+        "start_x": 0.15,
+        "start_y": 0.08,
+        "depth": 2,
+        "branch_length": 0.07,
+        "angle": 0.1,  # Slight upward angle
+        "thickness": 0.005,
+        "stiffness": 520.0,
+        "damping": 0.04,
+        "num_sub_branches": 3,
+        "sub_branch_angle": 1.2,  # Around PI/3 radians
+        "sub_branch_length_ratio": 0.65,
+        "right_bias": 1.25,  # Make right branches 25% longer
+        "actuation_start": 0,
+        "ptype": 1
+    },
+    # Bouncing star
+    {
+        "start_x": 0.12,
+        "start_y": 0.06,
+        "depth": 2,
+        "branch_length": 0.06,
+        "angle": 0.0,  # Horizontal main branch
+        "thickness": 0.004,
+        "stiffness": 480.0,
+        "damping": 0.035,
+        "num_sub_branches": 4,
+        "sub_branch_angle": 1.57,  # PI/2 radians (90 degrees)
+        "sub_branch_length_ratio": 0.6,
+        "right_bias": 1.1,  # Slight right bias
+        "actuation_start": 0,
+        "ptype": 1
+    },
+    # Low-profile roller
+    {
+        "start_x": 0.1,
+        "start_y": 0.04,  # Very low to ground
+        "depth": 2,
+        "branch_length": 0.05,
+        "angle": 0.0,
+        "thickness": 0.003,
+        "stiffness": 500.0,
+        "damping": 0.03,
+        "num_sub_branches": 3,
+        "sub_branch_angle": 2.0,  # Wide angle spread
+        "sub_branch_length_ratio": 0.55,
+        "right_bias": 1.3,  # Strong right bias
+        "actuation_start": 0,
+        "ptype": 1
+    },
+    # Complex worm-like
+    {
+        "start_x": 0.14,
+        "start_y": 0.07,
+        "depth": 2,
+        "branch_length": 0.08,
+        "angle": -0.1,  # Slight downward angle
+        "thickness": 0.006,
+        "stiffness": 450.0,
+        "damping": 0.05,
+        "num_sub_branches": 2,
+        "sub_branch_angle": 1.0,  # Around PI/3 radians
+        "sub_branch_length_ratio": 0.7,
+        "right_bias": 1.2,
+        "actuation_start": 0,
+        "ptype": 1
+    }
+]
+
+def generate_optimized_params(max_particles):
+    """Generate parameters optimized for horizontal movement and memory constraints"""
+    # Select a random template from our good templates with slight variation
+    template = random.choice(PARAM_TEMPLATES).copy()
+    
+    # Add small random variations to make each instance unique
+    template["start_x"] += random.uniform(-0.03, 0.03)
+    template["start_y"] += random.uniform(-0.01, 0.02)
+    template["branch_length"] += random.uniform(-0.01, 0.01)
+    template["angle"] += random.uniform(-0.2, 0.2)
+    template["thickness"] += random.uniform(-0.001, 0.001)
+    template["stiffness"] += random.uniform(-30.0, 30.0)
+    template["damping"] += random.uniform(-0.01, 0.01)
+    template["sub_branch_angle"] += random.uniform(-0.2, 0.2)
+    template["sub_branch_length_ratio"] += random.uniform(-0.05, 0.05)
+    template["right_bias"] += random.uniform(-0.1, 0.1)
+    
+    # Occasionally try different branch counts
+    if random.random() < 0.3:
+        template["num_sub_branches"] = random.randint(2, 4)
+    
+    # Sometimes try a deeper structure
+    if random.random() < 0.2 and max_particles > 1500:
+        template["depth"] = 3
+        # If deeper, we need to reduce other complexity factors
+        template["branch_length"] *= 0.8
+        template["thickness"] *= 0.8
+        template["num_sub_branches"] = max(2, template["num_sub_branches"] - 1)
+    
+    # Ensure parameters are within valid ranges
+    template["start_x"] = max(0.05, min(0.3, template["start_x"]))
+    template["start_y"] = max(0.03, min(0.15, template["start_y"]))
+    template["branch_length"] = max(0.03, min(0.1, template["branch_length"]))
+    template["thickness"] = max(0.002, min(0.01, template["thickness"]))
+    template["stiffness"] = max(300, min(700, template["stiffness"]))
+    template["damping"] = max(0.01, min(0.1, template["damping"]))
+    template["sub_branch_length_ratio"] = max(0.3, min(0.8, template["sub_branch_length_ratio"]))
+    template["right_bias"] = max(1.0, min(1.5, template["right_bias"]))
+    
+    # Adjust particle density based on structure complexity
+    return adaptive_particle_density(template, max_particles)
+
 
 def allocate_fields():
     ti.root.dense(ti.ij, (n_actuators, n_sin_waves)).place(weights)
@@ -294,59 +408,7 @@ class Scene:
         self.n_actuators = 1  # Initialize with at least 1 actuator
         self.springs = []  # Store spring connections
 
-    
-    
-    def add_spring(self, p1, p2, stiffness, damping):
-        """Add a spring connection between two particles"""
-        self.springs.append({
-            'p1': p1,
-            'p2': p2,
-            'stiffness': stiffness,
-            'damping': damping,
-            'rest_length': np.linalg.norm(np.array(self.x[p1]) - np.array(self.x[p2]))
-        })
-    
-
-    def add_rect(self, x, y, w, h, actuation, ptype=1):
-        if ptype == 0:
-            assert actuation == -1
-        global n_particles
-        w_count = int(w / dx) * 2
-        h_count = int(h / dx) * 2
-        real_dx = w / w_count
-        real_dy = h / h_count
-        for i in range(w_count):
-            for j in range(h_count):
-                self.x.append([
-                    x + (i + 0.5) * real_dx + self.offset_x,
-                    y + (j + 0.5) * real_dy + self.offset_y
-                ])
-                self.actuator_id.append(actuation)
-                self.particle_type.append(ptype)
-                self.n_particles += 1
-                self.n_solid_particles += int(ptype == 1)
-                if actuation != -1:
-                    self.n_actuators = max(self.n_actuators, actuation + 1)
-
-    def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
-        global n_particles
-        spacing = dx / 2  # Adjust spacing for denser particles
-        # Iterate over a grid within the bounding box of the circle
-        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing) + 1):
-            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing) + 1):
-                x_pos = center_x + (i * spacing - center_x)
-                y_pos = center_y + (j * spacing - center_y)
-                # Check if the point is inside the circle
-                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
-                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
-                    self.actuator_id.append(actuation)
-                    self.particle_type.append(ptype)
-                    self.n_particles += 1
-                    self.n_solid_particles += int(ptype == 1)
-                    if actuation != -1:
-                        self.n_actuators = max(self.n_actuators, actuation + 1)
-
-def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
+    def add_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
         """Create a recursive branching structure (e.g., snowflake-like) with thicker branches"""
         if depth <= 0:
             return
@@ -406,6 +468,72 @@ def add_branching_structure(self, start_x, start_y, depth, branch_length, angle,
                 
             self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, 
                                         actuation_start + 1, ptype, params)
+    
+    def finalize(self):
+        global n_particles, n_solid_particles, n_actuators
+        n_particles = self.n_particles
+        n_solid_particles = self.n_solid_particles
+        n_actuators = self.n_actuators  # Update global n_actuators
+        print('n_particles', n_particles)
+        print('n_solid', n_solid_particles)
+        print('n_actuators', n_actuators)
+    
+    def set_offset(self, x, y):
+        """Set position offset for the scene"""
+        self.offset_x = x
+        self.offset_y = y
+
+    def add_spring(self, p1, p2, stiffness, damping):
+        """Add a spring connection between two particles"""
+        self.springs.append({
+            'p1': p1,
+            'p2': p2,
+            'stiffness': stiffness,
+            'damping': damping,
+            'rest_length': np.linalg.norm(np.array(self.x[p1]) - np.array(self.x[p2]))
+        })
+    
+
+    def add_rect(self, x, y, w, h, actuation, ptype=1):
+        if ptype == 0:
+            assert actuation == -1
+        global n_particles
+        w_count = int(w / dx) * 2
+        h_count = int(h / dx) * 2
+        real_dx = w / w_count
+        real_dy = h / h_count
+        for i in range(w_count):
+            for j in range(h_count):
+                self.x.append([
+                    x + (i + 0.5) * real_dx + self.offset_x,
+                    y + (j + 0.5) * real_dy + self.offset_y
+                ])
+                self.actuator_id.append(actuation)
+                self.particle_type.append(ptype)
+                self.n_particles += 1
+                self.n_solid_particles += int(ptype == 1)
+                if actuation != -1:
+                    self.n_actuators = max(self.n_actuators, actuation + 1)
+
+    def add_circle(self, center_x, center_y, radius, actuation, ptype=1):
+        global n_particles
+        spacing = dx / 2  # Adjust spacing for denser particles
+        # Iterate over a grid within the bounding box of the circle
+        for i in range(int((center_x - radius) / spacing), int((center_x + radius) / spacing) + 1):
+            for j in range(int((center_y - radius) / spacing), int((center_y + radius) / spacing) + 1):
+                x_pos = center_x + (i * spacing - center_x)
+                y_pos = center_y + (j * spacing - center_y)
+                # Check if the point is inside the circle
+                if (x_pos - center_x) ** 2 + (y_pos - center_y) ** 2 <= radius ** 2:
+                    self.x.append([x_pos + self.offset_x, y_pos + self.offset_y])
+                    self.actuator_id.append(actuation)
+                    self.particle_type.append(ptype)
+                    self.n_particles += 1
+                    self.n_solid_particles += int(ptype == 1)
+                    if actuation != -1:
+                        self.n_actuators = max(self.n_actuators, actuation + 1)
+
+
 
 # Improved add_branching_structure function with asymmetry for better movement
 def add_branching_structure_v2(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
@@ -501,13 +629,27 @@ def adaptive_particle_density(params, max_particles):
         target_count = max_particles * 0.6
         reduction_factor = target_count / est_count
         
-        # Apply reduction to parameters that affect particle count
+        print(f"Reducing particle density: est={est_count}, target={target_count}, factor={reduction_factor:.3f}")
+        
+        # Apply reduction factors to different parameters based on their impact
+        # Branch length reduction (has major impact)
         params["branch_length"] = max(0.03, params["branch_length"] * reduction_factor**0.5)
         
-        # Reduce thickness which affects perpendicular particle count
-        params["thickness"] = max(0.003, params["thickness"] * reduction_factor**0.2)
+        # Thickness reduction (also significant impact)
+        params["thickness"] = max(0.002, params["thickness"] * reduction_factor**0.3)
         
+        # Depth reduction for very large structures
+        if reduction_factor < 0.5 and params["depth"] > 1:
+            params["depth"] -= 1
+            print("Reducing depth to save memory")
+            
+        # Reduce sub-branches as a last resort
+        if reduction_factor < 0.3 and params["num_sub_branches"] > 2:
+            params["num_sub_branches"] -= 1
+            print("Reducing sub-branches to save memory")
+    
     return params
+
 
 def create_chunked_simulation(scene, params, max_chunk_size=1000):
     """Break simulation into manageable chunks to avoid memory issues"""
@@ -732,23 +874,40 @@ def randomize_snowflake_params():
 
 # Add this function to estimate particle count before creating the structure
 def estimate_particle_count(params):
-    """Roughly estimate the number of particles for a given parameter set"""
-    points_per_branch = max(5, int(params["branch_length"] / dx * 4))
-    particles_per_point = 3  # From the perpendicular thickness
+    """Improved estimate of particle count for a given parameter set"""
+    # Base count for main branches
+    points_per_branch = max(3, int(params["branch_length"] / (dx * (params["depth"] + 1))))
     
-    # Recursive formula for branch count in a tree structure
-    # For a depth d with b sub-branches: total = 1 + b + b^2 + ... + b^(d-1)
-    # This simplifies to (b^d - 1)/(b - 1) for b > 1
+    # Adjust particle thickness based on depth
+    # Terminal branches are single line, others are 3 particles thick
+    avg_thickness = 1 + (params["depth"] - 1) * 2  # Approximation
+    particles_per_point = avg_thickness
+    
+    # Calculate total branches more accurately with asymmetry consideration
     d = params["depth"]
     b = params["num_sub_branches"]
+    
+    # Account for asymmetry and depth reduction on left side
     if b == 1:
         total_branches = d
     else:
-        total_branches = (b**d - 1) // (b - 1)
+        # Right side branches have full depth
+        right_branches = (b//2) * (b**(d-1) - 1) // (b - 1) if b > 1 else d
+        
+        # Left side branches have reduced depth (approximately by 1)
+        left_depth = max(1, d - 1)
+        left_branches = (b - b//2) * (b**(left_depth-1) - 1) // (b - 1) if b > 1 else left_depth
+        
+        total_branches = 1 + right_branches + left_branches  # Include main branch
+    
+    # Add base platform particles
+    base_platform = int((0.05 / dx) * 2) * int((0.015 / dx) * 2)
     
     # Estimate total particle count
-    total_particles = total_branches * points_per_branch * particles_per_point
-    return total_particles
+    total_particles = (total_branches * points_per_branch * particles_per_point) + base_platform
+    
+    # Add safety margin
+    return int(total_particles * 1.1)  # 10% safety margin
 
 def randomize_snowflake_params():
     snowflake_params = {
@@ -824,20 +983,37 @@ def mutate(params):
     return params
 
 def reset_fields():
-    """Reset Taichi fields to their initial state."""
+    """Reset Taichi fields to their initial state"""
+    print("Resetting Taichi fields...")
     global x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
+    
+    # Clear matrices first to release memory
     x.fill(0)
     v.fill(0)
-    C.fill([[0, 0], [0, 0]])
-    F.fill([[1, 0], [0, 1]])
-    grid_v_in.fill([0, 0])
+    C.fill(0)
+    F.fill(0)
+    
+    # Reset matrices to proper values
+    for f in range(max_steps):
+        for i in range(n_particles):
+            F[f, i] = [[1, 0], [0, 1]]
+    
+    # Reset grid fields
+    grid_v_in.fill(0)
     grid_m_in.fill(0)
-    grid_v_out.fill([0, 0])
+    grid_v_out.fill(0)
+    
+    # Reset actuation fields
     actuation.fill(0)
     weights.fill(0)
     bias.fill(0)
+    
+    # Reset scalar fields
     loss[None] = 0
     x_avg[None] = [0, 0]
+    
+    # Force synchronization to make sure everything is cleared
+    ti.sync()
 
 import os
 from datetime import datetime
@@ -846,8 +1022,8 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
-    parser.add_argument('--population_size', type=int, default=8)  # Reduced population size
-    parser.add_argument('--num_generations', type=int, default=10)
+    parser.add_argument('--population_size', type=int, default=6)  # Reduced population size
+    parser.add_argument('--num_generations', type=int, default=4)
     parser.add_argument('--max_particles', type=int, default=2000)
     options = parser.parse_args()
 
@@ -929,7 +1105,6 @@ def main():
         except:
             print("Warning: Error during ti.reset()")
         print("Done!")
-
 
 def evolutionary_optimization_v2(population_size, num_generations, run_folder, max_particles):
     """Improved evolutionary algorithm with memory management and specialization"""
