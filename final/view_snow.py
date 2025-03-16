@@ -536,7 +536,7 @@ def main():
 
     # filename = "run_20250311_133620/best_structure.csv/snowflake_config_20250311_133631.csv"
     # filename = ""
-    filename = "//home/annguyen/classes/artificial-life/difftaichi_modified/final/run_20250316_161953/gen_1/structure_6.csv/snowflake_config_20250316_162332.csv"
+    filename = "/home/annguyen/classes/artificial-life/difftaichi_modified/final/run_20250316_162515/gen_1/structure_3.csv/snowflake_config_20250316_162756.csv"
     snowflake_params = load_params_from_csv(filename)
 
     # # Print the loaded parameters
