@@ -634,8 +634,8 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
-    parser.add_argument('--population_size', type=int, default=10)
-    parser.add_argument('--num_generations', type=int, default=5)
+    parser.add_argument('--population_size', type=int, default=1)
+    parser.add_argument('--num_generations', type=int, default=1)
     parser.add_argument('--max_particles', type=int, default=2000)
     options = parser.parse_args()
 
@@ -830,19 +830,6 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
             
         top_structures = [params for _, params in valid_structures[:max(1, population_size // 2)]]
 
-        # Create new population through mutation and crossover
-        new_population = top_structures.copy()
-        while len(new_population) < population_size:
-            if len(top_structures) >= 2:
-                parent1, parent2 = random.sample(top_structures, 2)
-                child = crossover(parent1, parent2)
-            else:
-                child = top_structures[0].copy()
-            child = mutate(child)
-            new_population.append(child)
-
-        population = new_population
-
         # Force CUDA synchronization and garbage collection between generations
         ti.sync()
         gc.collect()
@@ -855,61 +842,6 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     # Sort by score only (not by the dictionary)
     valid_scores.sort(key=lambda x: x[0], reverse=True)
     return valid_scores[0][1]  # Return the params of the best structure
-
-def crossover(parent1, parent2):
-    """Perform crossover between two parent structures"""
-    child = {}
-    for key in parent1.keys():
-        # For numeric parameters, we can use crossover techniques
-        if isinstance(parent1[key], (int, float)):
-            if random.random() < 0.5:
-                # Simple selection from either parent
-                child[key] = parent1[key] if random.random() < 0.5 else parent2[key]
-            else:
-                # Blending (for float values)
-                if isinstance(parent1[key], float):
-                    # Blend with some randomness
-                    blend_ratio = random.random()
-                    child[key] = parent1[key] * blend_ratio + parent2[key] * (1 - blend_ratio)
-                else:
-                    # For integers, just take one or the other
-                    child[key] = parent1[key] if random.random() < 0.5 else parent2[key]
-        else:
-            # For non-numeric parameters, just select from either parent
-            child[key] = parent1[key] if random.random() < 0.5 else parent2[key]
-    return child
-
-def mutate(params):
-    """Mutate the parameters of a structure"""
-    mutated_params = params.copy()
-    for key in mutated_params.keys():
-        # Different mutation rates for different parameters
-        mutation_prob = 0.2  # 20% chance of mutation
-        
-        if random.random() < mutation_prob:
-            if key == "num_nodes":
-                mutated_params[key] = max(10, mutated_params[key] + random.randint(-5, 5))
-            elif key == "max_actuators":
-                mutated_params[key] = max(2, min(15, mutated_params[key] + random.randint(-2, 2)))
-            elif key == "num_extra_connections":
-                mutated_params[key] = max(0, mutated_params[key] + random.randint(-3, 3))
-            elif key == "rightward_bias":
-                # Keep bias in [0.5, 0.95] range to ensure tendency toward right
-                mutated_params[key] = max(0.5, min(0.95, mutated_params[key] + random.uniform(-0.1, 0.1)))
-            elif key == "actuator_probability":
-                mutated_params[key] = max(0.1, min(0.9, mutated_params[key] + random.uniform(-0.1, 0.1)))
-            elif key == "stiffness":
-                mutated_params[key] = max(200, mutated_params[key] + random.uniform(-100, 100))
-            elif key == "damping":
-                mutated_params[key] = max(0.01, min(0.2, mutated_params[key] + random.uniform(-0.02, 0.02)))
-            elif isinstance(mutated_params[key], float):
-                # Generic float mutation
-                mutated_params[key] += random.uniform(-0.05, 0.05) * mutated_params[key]
-            elif isinstance(mutated_params[key], int):
-                # Generic int mutation
-                mutated_params[key] += random.randint(-2, 2)
-                
-    return mutated_params
 
 if __name__ == '__main__':
     main()

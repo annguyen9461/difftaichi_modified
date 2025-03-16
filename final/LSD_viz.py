@@ -609,7 +609,7 @@ def main():
                       choices=['hybrid', 'net', 'custom'], 
                       help='Structure type: hybrid (circles+rects), net, or custom (from CSV)')
     parser.add_argument('--output', type=str, default='', help='Output folder for visualization')
-    parser.add_argument('--frames', type=int, default=200, help='Number of simulation frames')
+    parser.add_argument('--frames', type=int, default=2000, help='Number of simulation frames')
     options = parser.parse_args()
     
     # Create output folder if needed
