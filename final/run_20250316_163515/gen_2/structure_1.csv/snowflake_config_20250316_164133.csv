@@ -1,0 +1,15 @@
+Parameter,Value
+start_x,0.17805560362440376
+start_y,0.08393946868560748
+depth,3
+branch_length,0.07162285847348947
+angle,-0.43618782853431576
+thickness,0.007585536775107238
+stiffness,538.8881996707368
+damping,0.03212038625177876
+num_sub_branches,3
+sub_branch_angle,0.9567944599460572
+sub_branch_length_ratio,0.684449662653566
+actuation_start,0
+ptype,1
+right_bias,1.1840860396887907

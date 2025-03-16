@@ -956,10 +956,15 @@ def load_params_from_csv(filename):
             # Convert value to the appropriate type
             if key in ["depth", "num_sub_branches", "actuation_start", "ptype"]:
                 params[key] = int(value)
-            elif key in ["start_x", "start_y", "branch_length", "angle", "thickness", "stiffness", "damping", "sub_branch_angle", "sub_branch_length_ratio"]:
+            elif key in ["start_x", "start_y", "branch_length", "angle", "thickness", "stiffness", "damping", "sub_branch_angle", "sub_branch_length_ratio", "right_bias"]:
                 params[key] = float(value)
             else:
                 params[key] = value
+    
+    # Add right_bias if missing
+    if "right_bias" not in params:
+        params["right_bias"] = 1.2
+        
     return params
 
 def crossover(parent1, parent2):
@@ -1022,11 +1027,50 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
-    parser.add_argument('--population_size', type=int, default=6)  # Reduced population size
+    parser.add_argument('--population_size', type=int, default=6)
     parser.add_argument('--num_generations', type=int, default=4)
-    parser.add_argument('--max_particles', type=int, default=2000)
+    parser.add_argument('--max_particles', type=int, default=5000)
+    parser.add_argument('--mode', type=str, default='evolve', 
+                        choices=['evolve', 'test', 'test_best', 'save_best'],
+                        help='Mode: evolve (run evolution), test (test from file), test_best (test best param), save_best (save best param)')
+    parser.add_argument('--config_file', type=str, default=None,
+                        help='Configuration file to test (for test mode)')
+    parser.add_argument('--preset_folder', type=str, default=None,
+                        help='Folder containing preset population structure CSV files')
     options = parser.parse_args()
 
+    # Process different modes
+    if options.mode == 'save_best':
+        # Save the best parameter set to a file
+        save_best_config()
+        return
+    
+    if options.mode == 'test_best':
+        # Test the best parameter set
+        test_specific_config()
+        return
+    
+    if options.mode == 'test':
+        if options.config_file:
+            test_specific_config(options.config_file)
+        else:
+            print("Error: No configuration file specified for test mode")
+            print("Use --config_file parameter to specify a configuration file")
+        return
+
+    # Check if using preset population
+    if options.preset_folder is not None:
+        if os.path.exists(options.preset_folder):
+            run_evolution_with_preset_population(
+                options.preset_folder,
+                num_generations=options.num_generations,
+                max_particles=options.max_particles
+            )
+        else:
+            print(f"Error: Preset folder not found: {options.preset_folder}")
+        return
+
+    # Default: run evolutionary optimization
     # Create run folder
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_folder = f"run_{current_time}"
@@ -1039,7 +1083,7 @@ def main():
     n_actuators = 10
     
     try:
-        # Initialize Taichi with memory limits - fixed initialization
+        # Initialize Taichi with memory limits
         ti.init(
             default_fp=real, 
             arch=ti.gpu, 
@@ -1082,6 +1126,11 @@ def main():
                 actuator_id[i] = scene.actuator_id[i]
                 particle_type[i] = scene.particle_type[i]
             
+            # Update global counts
+            n_particles = scene.n_particles
+            n_solid_particles = scene.n_solid_particles
+            n_actuators = scene.n_actuators
+            
             # Run simulation
             forward()
             
@@ -1106,15 +1155,159 @@ def main():
             print("Warning: Error during ti.reset()")
         print("Done!")
 
-def evolutionary_optimization_v2(population_size, num_generations, run_folder, max_particles):
-    """Improved evolutionary algorithm with memory management and specialization"""
-    # Initialize with smaller population to avoid memory issues
-    population = [generate_optimized_params(max_particles) for _ in range(population_size)]
+def run_evolution_with_preset_population(population_folder, num_generations=5, max_particles=2000):
+    """
+    Run a full evolution simulation using a preset population loaded from CSV files.
+    
+    Args:
+        population_folder: Folder containing CSV files with structure configurations
+        num_generations: Number of generations to run
+        max_particles: Maximum number of particles allowed
+        
+    Returns:
+        Best structure found during evolution
+    """
+    print(f"Running evolution with preset population from {population_folder}")
+    print(f"Number of generations: {num_generations}")
+    
+    # Create a folder for this run
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_folder = f"preset_run_{current_time}"
+    os.makedirs(run_folder, exist_ok=True)
+    
+    # Load population from CSV files
+    population = []
+    
+    # Handle the nested folder structure
+    # For each structure directory, look for CSV files inside it
+    for item in os.listdir(population_folder):
+        item_path = os.path.join(population_folder, item)
+        
+        # Check if it's a directory containing structure
+        if os.path.isdir(item_path) and item.startswith("structure_"):
+            # Look for CSV files inside this directory
+            for file in os.listdir(item_path):
+                if file.endswith(".csv") and "snowflake_config_" in file:
+                    try:
+                        file_path = os.path.join(item_path, file)
+                        params = load_params_from_csv(file_path)
+                        population.append(params)
+                        print(f"Loaded {item}/{file}")
+                    except Exception as e:
+                        print(f"Error loading {item}/{file}: {e}")
+    
+    if not population:
+        print(f"No valid structure configurations found in {population_folder}")
+        print("Check if the CSV files are inside structure_X directories")
+        return None
+    
+    print(f"Successfully loaded {len(population)} structures")
+    
+    # Initialize with reasonable limits
+    global n_particles, n_solid_particles, n_actuators
+    n_particles = max_particles
+    n_solid_particles = max_particles
+    n_actuators = 10
+    
+    try:
+        # Initialize Taichi
+        ti.init(default_fp=real, arch=ti.gpu, flatten_if=True, device_memory_fraction=0.7)
+        allocate_fields()
+        
+        # Add necessary methods to Scene class
+        Scene.add_branching_structure_v2 = add_branching_structure_v2
+        
+        # Run the evolution with the preset population
+        best_structure = evolutionary_optimization_v2(
+            population_size=len(population),
+            num_generations=num_generations,
+            run_folder=run_folder,
+            max_particles=max_particles,
+            initial_population=population  # Pass the loaded population
+        )
+        
+        # Save the best structure
+        save_params_to_csv(best_structure, os.path.join(run_folder, "best_structure.csv"))
+        print(f"Best structure saved to {os.path.join(run_folder, 'best_structure.csv')}")
+        
+        # Visualize the best structure
+        try:
+            reset_fields()
+            
+            scene = Scene()
+            create_complex_robot_v2(scene, best_structure)
+            
+            for i in range(scene.n_particles):
+                x[0, i] = scene.x[i]
+                F[0, i] = [[1, 0], [0, 1]]
+                actuator_id[i] = scene.actuator_id[i]
+                particle_type[i] = scene.particle_type[i]
+            
+            n_particles = scene.n_particles
+            n_solid_particles = scene.n_solid_particles
+            n_actuators = scene.n_actuators
+            
+            forward()
+            
+            vis_folder = os.path.join(run_folder, "visualization")
+            for s in range(0, steps, steps//20):
+                visualize(s, vis_folder)
+                
+        except Exception as e:
+            print(f"Visualization error: {e}")
+        
+        return best_structure
+        
+    except Exception as e:
+        print(f"Error during evolution: {e}")
+        return None
+    finally:
+        import gc
+        gc.collect()
+        try:
+            ti.reset()
+        except:
+            print("Warning: Error during ti.reset()")
+        print("Evolution complete!")
+
+# Modified evolutionary_optimization_v2 function to accept an initial population
+def evolutionary_optimization_v2(population_size, num_generations, run_folder, max_particles, initial_population=None):
+    """
+    Improved evolutionary algorithm with memory management and specialization.
+    Can start with a preset population loaded from files.
+    
+    Args:
+        population_size: Size of the population in each generation
+        num_generations: Number of generations to run
+        run_folder: Folder to save results
+        max_particles: Maximum number of particles allowed
+        initial_population: Optional preset population to start with
+        
+    Returns:
+        Best structure parameters found during evolution
+    """
+    # Initialize population either from preset or randomly
+    if initial_population is not None:
+        print(f"Starting with preset population of {len(initial_population)} structures")
+        population = initial_population.copy()
+        
+        # Ensure the population size matches the expected size
+        while len(population) < population_size:
+            print("Adding additional random structures to reach desired population size")
+            population.append(generate_optimized_params(max_particles))
+            
+        if len(population) > population_size:
+            print(f"Warning: Preset population is larger than specified size ({len(population)} > {population_size})")
+            print(f"Using the first {population_size} structures")
+            population = population[:population_size]
+    else:
+        print(f"Generating random initial population of {population_size} structures")
+        population = [generate_optimized_params(max_particles) for _ in range(population_size)]
+    
+    # Rest of the function remains the same as before
     all_fitness_scores = []
     best_structure = None
     best_fitness = -float('inf')
-    
-    # Track successful structures for reproduction
     successful_structures = []
     
     for generation in range(num_generations):
@@ -1125,16 +1318,13 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
         
         # Periodically clear memory
         if generation > 0 and generation % 2 == 0:
-            # Force garbage collection
             import gc
             gc.collect()
-            # Clear Taichi fields
             reset_fields()
-            # Force CUDA synchronization
             ti.sync()
         
         for idx, params in enumerate(population):
-            print(f"Evaluating structure {idx + 1}/{population_size}")
+            print(f"Evaluating structure {idx + 1}/{len(population)}")
             
             # Adjust parameters to fit within memory constraints
             est_particles = estimate_particle_count(params)
@@ -1145,20 +1335,17 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
             # Try to create and evaluate the structure
             try:
                 scene = Scene()
-                
-                # Create the robot structure
                 create_complex_robot_v2(scene, params)
                 
-                # Skip if too many particles
                 if scene.n_particles > max_particles:
                     print(f"Structure {idx + 1} has too many particles ({scene.n_particles}). Skipping.")
                     fitness_scores.append(-1000)
                     continue
-                    
+                
                 # Reset fields before simulation
                 reset_fields()
                 
-                # Initialize particle positions
+                # Initialize particles
                 for i in range(scene.n_particles):
                     x[0, i] = scene.x[i]
                     F[0, i] = [[1, 0], [0, 1]]
@@ -1181,25 +1368,23 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
                 if initial_count > 0:
                     x_initial /= initial_count
                 
-                # Run the simulation with proper memory management
+                # Run simulation
                 try:
                     ti.sync()
                     
-                    # Run with reduced steps if memory is an issue
+                    # Use reduced steps for large structures
                     if scene.n_particles > max_particles * 0.7:
                         reduced_steps = steps // 2
                         forward(reduced_steps)
                     else:
                         forward()
                     
-                    # Calculate fitness based on horizontal distance
+                    # Calculate fitness
                     x_final = x_avg[None][0]
                     horizontal_distance = x_final - x_initial
-                    
-                    # Reward structures that move further horizontally
                     fitness = horizontal_distance * 10
                     
-                    # Add bonus for efficient structures (fewer particles but good movement)
+                    # Add efficiency bonus
                     efficiency_factor = 1.0 + (max_particles - scene.n_particles) / max_particles
                     fitness *= efficiency_factor
                     
@@ -1212,13 +1397,13 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
                 fitness_scores.append(fitness)
                 all_fitness_scores.append((fitness, params))
                 
-                # Track the best structure
+                # Track best structure
                 if fitness > best_fitness:
                     best_fitness = fitness
                     best_structure = params.copy()
                     print(f"New best structure! Fitness: {fitness}")
                 
-                # Save successful structures for future generations
+                # Save successful structures
                 if fitness > 0:
                     successful_structures.append((fitness, params.copy()))
                 
@@ -1227,10 +1412,9 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
                 with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
                     f.write(f"Structure {idx + 1}: {fitness}\n")
                 
-                # Explicit cleanup
+                # Clean up
                 import gc
                 gc.collect()
-                # Small delay to let GPU recover
                 import time
                 time.sleep(0.2)
                 
@@ -1242,21 +1426,22 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
         # Check for valid structures
         if all(score <= 0 for score in fitness_scores):
             print("No effective structures found. Generating new population.")
-            population = [generate_optimized_params(max_particles) for _ in range(population_size)]
+            population = [generate_optimized_params(max_particles) for _ in range(len(population))]
             continue
         
-        # Create next generation using successful parents
+        # Create next generation
         if successful_structures:
             # Sort by fitness
             successful_structures.sort(key=lambda x: x[0], reverse=True)
             
             # Keep only the top structures to avoid memory bloat
-            if len(successful_structures) > population_size * 2:
-                successful_structures = successful_structures[:population_size * 2]
-                
+            if len(successful_structures) > len(population) * 2:
+                successful_structures = successful_structures[:len(population) * 2]
+            
             # Weight selection by fitness
             fitness_values = [s[0] for s in successful_structures]
             total_fitness = sum(fitness_values)
+            
             if total_fitness > 0:
                 selection_probs = [f/total_fitness for f in fitness_values]
                 
@@ -1267,11 +1452,11 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
                 new_population.append(successful_structures[0][1])
                 
                 # Fill rest with evolved structures
-                while len(new_population) < population_size:
+                while len(new_population) < len(population):
                     # Select parents weighted by fitness
                     parent_indices = random.choices(
-                        range(len(successful_structures)), 
-                        weights=selection_probs, 
+                        range(len(successful_structures)),
+                        weights=selection_probs,
                         k=2
                     )
                     parent1 = successful_structures[parent_indices[0]][1]
@@ -1292,10 +1477,10 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
                 population = new_population
             else:
                 # Fallback to random generation
-                population = [generate_optimized_params(max_particles) for _ in range(population_size)]
+                population = [generate_optimized_params(max_particles) for _ in range(len(population))]
         else:
             # No successful structures, generate new population
-            population = [generate_optimized_params(max_particles) for _ in range(population_size)]
+            population = [generate_optimized_params(max_particles) for _ in range(len(population))]
         
         # Clear memory at end of generation
         reset_fields()
