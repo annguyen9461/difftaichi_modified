@@ -294,7 +294,10 @@ class Scene:
         self.n_actuators = 1  # Initialize with at least 1 actuator
         self.springs = []  # Store spring connections
 
-    
+    def set_offset(self, x, y):
+        """Set position offset for the scene"""
+        self.offset_x = x
+        self.offset_y = y
     
     def add_spring(self, p1, p2, stiffness, damping):
         """Add a spring connection between two particles"""

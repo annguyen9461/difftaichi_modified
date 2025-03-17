@@ -834,7 +834,39 @@ def add_branching_structure(self, start_x, start_y, depth, branch_length, angle,
         new_length = branch_length * params["sub_branch_length_ratio"]
         self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, actuation_start + 1, ptype, params)
 
+def load_parameters_from_csv(filename):
+    params = {}
+    with open(filename, mode='r') as file:
+        reader = csv.reader(file)
+        next(reader)  # Skip header
+        for row in reader:
+            if row:  # Skip empty rows
+                key, value = row
+                # Convert value to appropriate type
+                if key in ["depth", "num_sub_branches", "actuation_start", "ptype"]:
+                    params[key] = int(value)
+                else:
+                    params[key] = float(value)
+    return params
+
+# def main():
+#     # Load parameters from CSV
+#     params = load_parameters_from_csv("generated_parameters.csv")
+    
+#     # Create scene and add structure
+#     scene = Scene()
+#     create_snowflake_structure(scene, params)
+    
+#     # Rest of your simulation code...
+
 def main():
+    # Generate parameters
+    params = generate_parameters()
+    
+    # Create scene and add structure
+    scene = Scene()
+    create_snowflake_structure(scene, params)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
     parser.add_argument('--population_size', type=int, default=8)
@@ -942,7 +974,7 @@ def main():
         except:
             print("Warning: Error during ti.reset()")
         print("Done!")
-        
+
 def run_evolution_with_preset_population(population_folder, num_generations=5, max_particles=2000):
     """
     Run a full evolution simulation using a preset population loaded from CSV files.
@@ -1288,45 +1320,51 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
         gen_folder = os.path.join(run_folder, f"gen_{generation + 1}")
         os.makedirs(gen_folder, exist_ok=True)
 
-        for idx, params in enumerate(population):
+        for idx in range(population_size):
             print(f"Evaluating structure {idx + 1}/{population_size}")
             
-            # Pre-check estimated particle count
-            est_particles = estimate_particle_count(params)
-            if est_particles > max_particles * 0.9:  # 90% safety margin
-                print(f"Estimated particles ({est_particles}) exceeds limit. Simplifying structure.")
-                if params["depth"] > 1:
-                    params["depth"] -= 1
-                if params["num_sub_branches"] > 2:
-                    params["num_sub_branches"] -= 1
+            # Retry mechanism for generating valid structures
+            retry_count = 0
+            max_retries = 10  # Maximum number of retries
+            fitness = -1000  # Default fitness for invalid structures
             
-            # Create scene with safety check
-            try:
-                scene = Scene()
-                create_complex_robot(scene, params)
+            while retry_count < max_retries:
+                # Generate new parameters
+                params = randomize_snowflake_params()
                 
-                # Skip if too many particles
-                if scene.n_particles > max_particles:
-                    print(f"Structure {idx + 1} has too many particles ({scene.n_particles}). Skipping.")
-                    fitness_scores.append(-1000)  # Penalize overly complex structures
-                    continue
+                # Adjust parameters to fit within memory constraints
+                est_particles = estimate_particle_count(params)
+                if est_particles > max_particles * 0.9:  # 90% safety margin
+                    print(f"Estimated particles ({est_particles}) exceeds limit. Adjusting structure.")
+                    params = adaptive_particle_density(params, max_particles)
                 
-                # Reset fields before each simulation
-                reset_fields()
-
-                # Initialize particle positions
-                for i in range(scene.n_particles):
-                    x[0, i] = scene.x[i]
-                    F[0, i] = [[1, 0], [0, 1]]
-                    actuator_id[i] = scene.actuator_id[i]
-                    particle_type[i] = scene.particle_type[i]
-                
-                # Run simulation and compute fitness
+                # Try to create and evaluate the structure
                 try:
-                    # Force CUDA synchronization before simulation
-                    ti.sync()
+                    scene = Scene()
+                    create_snowflake_structure(scene, params)
                     
-                    # Calculate initial x position
+                    if scene.n_particles > max_particles:
+                        print(f"Structure {idx + 1} has too many particles ({scene.n_particles}). Retrying...")
+                        retry_count += 1
+                        continue  # Skip to the next retry
+                    
+                    # Reset fields before simulation
+                    reset_fields()
+                    
+                    # Initialize particles
+                    for i in range(scene.n_particles):
+                        x[0, i] = scene.x[i]
+                        F[0, i] = [[1, 0], [0, 1]]
+                        actuator_id[i] = scene.actuator_id[i]
+                        particle_type[i] = scene.particle_type[i]
+                    
+                    # Update global counts
+                    global n_particles, n_solid_particles, n_actuators
+                    n_particles = scene.n_particles
+                    n_solid_particles = scene.n_solid_particles
+                    n_actuators = scene.n_actuators
+                    
+                    # Calculate initial position
                     x_initial = 0.0
                     initial_count = 0
                     for i in range(scene.n_particles):
@@ -1336,47 +1374,62 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
                     if initial_count > 0:
                         x_initial /= initial_count
                     
-                    forward()
+                    # Run simulation
+                    try:
+                        ti.sync()
+                        
+                        # Use reduced steps for large structures
+                        if scene.n_particles > max_particles * 0.7:
+                            reduced_steps = steps // 2
+                            forward(reduced_steps)
+                        else:
+                            forward()
+                        
+                        # Calculate fitness
+                        x_final = x_avg[None][0]
+                        horizontal_distance = x_final - x_initial
+                        fitness = horizontal_distance * 10
+                        
+                        # Add efficiency bonus
+                        efficiency_factor = 1.0 + (max_particles - scene.n_particles) / max_particles
+                        fitness *= efficiency_factor
+                        
+                        ti.sync()
+                        
+                    except Exception as e:
+                        print(f"Simulation error: {e}")
+                        fitness = -1000
                     
-                    # Use the final x position directly rather than using compute_loss
-                    x_final = x_avg[None][0]  # Get x-coordinate of final position
-                    
-                    # Calculate horizontal distance
-                    horizontal_distance = x_final - x_initial
-                    fitness = horizontal_distance  # Reward horizontal movement
-                    
-                    # Force synchronization after simulation
-                    ti.sync()
-                    
-                    # Add a small delay to let GPU recover
-                    import time
-                    time.sleep(0.1)
-                    
-                except Exception as e:
-                    print(f"Error during simulation: {e}")
-                    fitness = -1000  # Penalize failed simulations
+                    # Break out of the retry loop if a valid structure is found
+                    break
                 
-                fitness_scores.append(fitness)
-                all_fitness_scores.append((fitness, params))
+                except Exception as e:
+                    print(f"Structure creation error: {e}")
+                    retry_count += 1
+                    continue
+            
+            # If max retries reached, use the last generated structure (even if invalid)
+            if retry_count >= max_retries:
+                print(f"Max retries reached for structure {idx + 1}. Using last generated structure.")
+            
+            fitness_scores.append(fitness)
+            all_fitness_scores.append((fitness, params))
 
-                # Save the configuration and fitness score
-                config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
-                save_params_to_csv(params, config_file)
-                with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
-                    f.write(f"Structure {idx + 1}: {fitness}\n")
-                    
-                # Explicit garbage collection
-                import gc
-                gc.collect()
-                    
-            except Exception as e:
-                print(f"Error creating structure {idx + 1}: {e}")
-                fitness_scores.append(-1000)
-                continue
+            # Save the configuration and fitness score
+            config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
+            save_params_to_csv(params, config_file)
+            with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
+                f.write(f"Structure {idx + 1}: {fitness}\n")
+            
+            # Clean up
+            import gc
+            gc.collect()
+            import time
+            time.sleep(0.2)
 
         # Check if we have any valid structures
         if all(score == -1000 for score in fitness_scores):
-            print("No valid structures in this generation. Generating new population.")
+            print("No effective structures found. Generating new population.")
             population = [randomize_snowflake_params() for _ in range(population_size)]
             continue
 
@@ -1424,6 +1477,44 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     valid_scores.sort(key=lambda x: x[0], reverse=True)
     return valid_scores[0][1]  # Return the params of the best structure
 
+import random
+import math
+
+def generate_parameters():
+    params = {
+        "start_x": random.uniform(0.0, 0.2),
+        "start_y": random.uniform(0.4, 0.6),
+        "depth": random.randint(2, 4),
+        "branch_length": random.uniform(0.05, 0.2),
+        "angle": random.uniform(0.0, 2 * math.pi),
+        "thickness": random.uniform(0.005, 0.02),
+        "stiffness": random.uniform(400.0, 600.0),
+        "damping": random.uniform(0.03, 0.07),
+        "num_sub_branches": random.randint(3, 7),
+        "sub_branch_angle": random.uniform(0.5, 1.5),
+        "sub_branch_length_ratio": random.uniform(0.5, 0.7),
+        "actuation_start": 0,
+        "ptype": 1
+    }
+    return params
+
+def generate_multiple_parameter_sets(num_sets):
+    parameter_sets = []
+    for _ in range(num_sets):
+        params = generate_parameters()
+        parameter_sets.append(params)
+    return parameter_sets
+
+def write_parameters_to_csv(parameter_sets, filename):
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Parameter", "Value"])  # Write header
+        for params in parameter_sets:
+            for key, value in params.items():
+                writer.writerow([key, value])
+            writer.writerow([])  # Add an empty row between sets
 
 if __name__ == '__main__':
-    main()
+    num_sets = 10  # Number of parameter sets to generate
+    parameter_sets = generate_multiple_parameter_sets(num_sets)
+    write_parameters_to_csv(parameter_sets, "generated_parameters.csv")
