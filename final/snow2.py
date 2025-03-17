@@ -52,122 +52,128 @@ actuation = scalar()
 actuation_omega = 20
 act_strength = 4
 
-
-# Four different template parameter sets that work well
-PARAM_TEMPLATES = [
-    # Horizontal crawler with right bias
+# Add these template parameters for interesting structures
+RANDOM_STRUCTURE_TEMPLATES = [
+    # Star-like radiating structure
     {
         "start_x": 0.15,
-        "start_y": 0.08,
-        "depth": 2,
+        "start_y": 0.1,
+        "depth": 3,
         "branch_length": 0.07,
+        "angle": 0.0,  # Horizontal
+        "thickness": 0.004,
+        "stiffness": 500.0,
+        "damping": 0.04,
+        "num_sub_branches": 3,
+        "sub_branch_angle": 1.0,  # About 60 degrees
+        "sub_branch_length_ratio": 0.7,
+        "ptype": 1,
+        "actuation_start": 0,
+        "num_starting_branches": 5,  # Star with 5 points
+        "starting_angle_spread": 2*math.pi,  # Full circle
+        "angle_jitter": 0.1,
+        "length_jitter": 0.1,
+        "thickness_variation": 0.1,
+        "stiffness_variation": 0.2,
+        "sub_branch_variation": 1,
+        "position_variation": False,  # Branch from ends
+        "angle_spread": 0.3,
+        "sub_length_variation": 0.2,
+        "random_angles": False,
+        "actuator_variance": True,
+        "num_actuators": 5,
+        "right_bias": 1.0  # No bias for symmetric movement
+    },
+    
+    # Asymmetric crawler with irregular branching
+    {
+        "start_x": 0.13,
+        "start_y": 0.08,
+        "depth": 3,
+        "branch_length": 0.06,
         "angle": 0.1,  # Slight upward angle
         "thickness": 0.005,
         "stiffness": 520.0,
         "damping": 0.04,
-        "num_sub_branches": 3,
-        "sub_branch_angle": 1.2,  # Around PI/3 radians
+        "num_sub_branches": 2,
+        "sub_branch_angle": 1.2,
         "sub_branch_length_ratio": 0.65,
-        "right_bias": 1.25,  # Make right branches 25% longer
+        "ptype": 1,
         "actuation_start": 0,
-        "ptype": 1
+        "num_starting_branches": 3,
+        "starting_angle_spread": math.pi/2,  # 90 degree spread
+        "angle_jitter": 0.2,
+        "length_jitter": 0.2,
+        "thickness_variation": 0.2,
+        "stiffness_variation": 0.2,
+        "sub_branch_variation": 1,
+        "position_variation": True,  # Branch from random positions
+        "angle_spread": 0.5,
+        "sub_length_variation": 0.3,
+        "random_angles": False,
+        "actuator_variance": True,
+        "num_actuators": 4,
+        "right_bias": 1.2  # Right bias for directional movement
     },
-    # Bouncing star
+    
+    # Tree-like structure with small branches
     {
         "start_x": 0.12,
-        "start_y": 0.06,
-        "depth": 2,
-        "branch_length": 0.06,
-        "angle": 0.0,  # Horizontal main branch
-        "thickness": 0.004,
-        "stiffness": 480.0,
-        "damping": 0.035,
-        "num_sub_branches": 4,
-        "sub_branch_angle": 1.57,  # PI/2 radians (90 degrees)
-        "sub_branch_length_ratio": 0.6,
-        "right_bias": 1.1,  # Slight right bias
-        "actuation_start": 0,
-        "ptype": 1
-    },
-    # Low-profile roller
-    {
-        "start_x": 0.1,
-        "start_y": 0.04,  # Very low to ground
-        "depth": 2,
-        "branch_length": 0.05,
-        "angle": 0.0,
-        "thickness": 0.003,
-        "stiffness": 500.0,
-        "damping": 0.03,
-        "num_sub_branches": 3,
-        "sub_branch_angle": 2.0,  # Wide angle spread
-        "sub_branch_length_ratio": 0.55,
-        "right_bias": 1.3,  # Strong right bias
-        "actuation_start": 0,
-        "ptype": 1
-    },
-    # Complex worm-like
-    {
-        "start_x": 0.14,
-        "start_y": 0.07,
-        "depth": 2,
+        "start_y": 0.1,
+        "depth": 3,
         "branch_length": 0.08,
         "angle": -0.1,  # Slight downward angle
         "thickness": 0.006,
-        "stiffness": 450.0,
-        "damping": 0.05,
-        "num_sub_branches": 2,
-        "sub_branch_angle": 1.0,  # Around PI/3 radians
-        "sub_branch_length_ratio": 0.7,
-        "right_bias": 1.2,
+        "stiffness": 480.0,
+        "damping": 0.035,
+        "num_sub_branches": 4,
+        "sub_branch_angle": 0.8,
+        "sub_branch_length_ratio": 0.6,
+        "ptype": 1,
         "actuation_start": 0,
-        "ptype": 1
+        "num_starting_branches": 2,  # Main trunk with one branch
+        "starting_angle_spread": math.pi/4,  # Small spread
+        "angle_jitter": 0.15,
+        "length_jitter": 0.1,
+        "thickness_variation": 0.15,
+        "stiffness_variation": 0.15,
+        "sub_branch_variation": 2,  # Varied sub-branch count
+        "position_variation": True,
+        "angle_spread": 0.4,
+        "sub_length_variation": 0.25,
+        "random_angles": False,
+        "actuator_variance": True,
+        "num_actuators": 4,
+        "right_bias": 1.15
     }
 ]
 
-def generate_optimized_params(max_particles):
-    """Generate parameters optimized for horizontal movement and memory constraints"""
-    # Select a random template from our good templates with slight variation
-    template = random.choice(PARAM_TEMPLATES).copy()
+# Function to generate parameters based on templates
+def generate_random_structure_from_templates(max_particles):
+    # Choose a random template
+    template = random.choice(RANDOM_STRUCTURE_TEMPLATES).copy()
     
     # Add small random variations to make each instance unique
     template["start_x"] += random.uniform(-0.03, 0.03)
-    template["start_y"] += random.uniform(-0.01, 0.02)
+    template["start_y"] += random.uniform(-0.02, 0.02)
     template["branch_length"] += random.uniform(-0.01, 0.01)
     template["angle"] += random.uniform(-0.2, 0.2)
     template["thickness"] += random.uniform(-0.001, 0.001)
     template["stiffness"] += random.uniform(-30.0, 30.0)
     template["damping"] += random.uniform(-0.01, 0.01)
     template["sub_branch_angle"] += random.uniform(-0.2, 0.2)
-    template["sub_branch_length_ratio"] += random.uniform(-0.05, 0.05)
-    template["right_bias"] += random.uniform(-0.1, 0.1)
+    template["sub_branch_length_ratio"] += random.uniform(-0.1, 0.1)
     
-    # Occasionally try different branch counts
+    # Sometimes adjust the number of starting branches
     if random.random() < 0.3:
-        template["num_sub_branches"] = random.randint(2, 4)
+        template["num_starting_branches"] = max(1, template["num_starting_branches"] + random.randint(-1, 1))
     
-    # Sometimes try a deeper structure
-    if random.random() < 0.2 and max_particles > 1500:
-        template["depth"] = 3
-        # If deeper, we need to reduce other complexity factors
-        template["branch_length"] *= 0.8
-        template["thickness"] *= 0.8
-        template["num_sub_branches"] = max(2, template["num_sub_branches"] - 1)
-    
-    # Ensure parameters are within valid ranges
-    template["start_x"] = max(0.05, min(0.3, template["start_x"]))
-    template["start_y"] = max(0.03, min(0.15, template["start_y"]))
-    template["branch_length"] = max(0.03, min(0.1, template["branch_length"]))
-    template["thickness"] = max(0.002, min(0.01, template["thickness"]))
-    template["stiffness"] = max(300, min(700, template["stiffness"]))
-    template["damping"] = max(0.01, min(0.1, template["damping"]))
-    template["sub_branch_length_ratio"] = max(0.3, min(0.8, template["sub_branch_length_ratio"]))
-    template["right_bias"] = max(1.0, min(1.5, template["right_bias"]))
+    # Sometimes make angles more random
+    if random.random() < 0.2:
+        template["random_angles"] = not template["random_angles"]
     
     # Adjust particle density based on structure complexity
     return adaptive_particle_density(template, max_particles)
-
-
 def allocate_fields():
     ti.root.dense(ti.ij, (n_actuators, n_sin_waves)).place(weights)
     ti.root.dense(ti.i, n_actuators).place(bias)
@@ -469,6 +475,112 @@ class Scene:
             self.add_branching_structure(end_x, end_y, depth - 1, new_length, sub_angle, 
                                         actuation_start + 1, ptype, params)
     
+    def add_organic_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
+        """Create a more organic, asymmetric branching structure"""
+        if depth <= 0:
+            return
+
+        # Add randomness to the angle
+        angle_jitter = params.get("angle_jitter", math.pi/8)
+        angle += random.uniform(-angle_jitter, angle_jitter)
+
+        # Add randomness to branch length
+        length_jitter = params.get("length_jitter", 0.2)
+        branch_length *= (1.0 + random.uniform(-length_jitter, length_jitter))
+
+        # Calculate end point
+        end_x = start_x + branch_length * math.cos(angle)
+        end_y = start_y + branch_length * math.sin(angle)
+
+        # Add particles along branch with reduced density
+        n_points = max(3, int(branch_length / (dx * (depth + 1))))
+
+        prev_particle_idx = None
+        for i in range(n_points):
+            t = i / (n_points - 1)
+            x_pos = start_x + t * (end_x - start_x)
+            y_pos = start_y + t * (end_y - start_y)
+
+            # Random thickness variation
+            thickness_variation = params.get("thickness_variation", 0.2)
+            thickness = params["thickness"] * (1.0 + random.uniform(-thickness_variation, thickness_variation))
+
+            # For non-terminal branches, use full thickness
+            if depth > 1:
+                thickness_range = range(-1, 2)  # 3 particles thick
+            else:
+                thickness_range = range(0, 1)  # Terminal branches are single line
+
+            for j in thickness_range:
+                offset_x = -j * thickness * math.sin(angle)
+                offset_y = j * thickness * math.cos(angle)
+
+                # Add particle
+                self.x.append([x_pos + offset_x + self.offset_x, y_pos + offset_y + self.offset_y])
+                self.actuator_id.append(actuation_start)
+                self.particle_type.append(ptype)
+                self.n_particles += 1
+                self.n_solid_particles += int(ptype == 1)
+
+                if actuation_start != -1:
+                    self.n_actuators = max(self.n_actuators, actuation_start + 1)
+
+                # Add springs
+                if prev_particle_idx is not None and j == 0:
+                    spring_stiffness = params["stiffness"] * (0.7 + 0.3 * depth/params["depth"])
+                    self.add_spring(prev_particle_idx, self.n_particles - 1, spring_stiffness, params["damping"])
+
+                if j != thickness_range.start and j < len(thickness_range) - 1:
+                    self.add_spring(self.n_particles - 1, self.n_particles - 2, params["stiffness"], params["damping"])
+
+            prev_particle_idx = self.n_particles - 1
+
+        # Determine how many sub-branches to create
+        sub_branch_count_variation = params.get("sub_branch_variation", 1)
+        num_sub_branches = max(0, params["num_sub_branches"] + random.randint(-sub_branch_count_variation, sub_branch_count_variation))
+
+        # Create sub-branches
+        for i in range(num_sub_branches):
+            # Randomize sub-branch position along main branch
+            if params.get("position_variation", True) and depth > 1:
+                branch_pos = random.uniform(0.3, 1.0)
+                sub_start_x = start_x + branch_pos * (end_x - start_x)
+                sub_start_y = start_y + branch_pos * (end_y - start_y)
+            else:
+                sub_start_x = end_x
+                sub_start_y = end_y
+
+            # Calculate sub-branch angle
+            if params.get("random_angles", False):
+                sub_angle = random.uniform(0, 2 * math.pi)
+            else:
+                if i < num_sub_branches // 2:
+                    side_factor = -1.0  # Left side
+                else:
+                    side_factor = 1.0  # Right side
+
+                angle_spread = params.get("angle_spread", 0.7)
+                sub_angle = angle + side_factor * (params["sub_branch_angle"] * (1.0 + random.uniform(-angle_spread, angle_spread)))
+
+            # Sub-branch length
+            length_ratio = params["sub_branch_length_ratio"]
+            if hasattr(params, "right_bias") and side_factor > 0:
+                length_ratio *= params["right_bias"]
+
+            sub_length_variation = params.get("sub_length_variation", 0.3)
+            sub_length = branch_length * length_ratio * (1.0 + random.uniform(-sub_length_variation, sub_length_variation))
+
+            # Recursive call with depth-1
+            self.add_organic_structure(
+                sub_start_x, sub_start_y, 
+                depth - 1, 
+                sub_length,
+                sub_angle,
+                (actuation_start + 1) % max(1, params.get("num_actuators", 5)),
+                ptype,
+                params
+            )
+
     def finalize(self):
         global n_particles, n_solid_particles, n_actuators
         n_particles = self.n_particles
@@ -650,7 +762,6 @@ def adaptive_particle_density(params, max_particles):
     
     return params
 
-
 def create_chunked_simulation(scene, params, max_chunk_size=1000):
     """Break simulation into manageable chunks to avoid memory issues"""
     global n_particles, n_solid_particles, n_actuators
@@ -711,23 +822,38 @@ def generate_optimized_params(max_particles):
     # Adjust particle density based on structure complexity
     return adaptive_particle_density(params, max_particles)
 
+def create_organic_robot(scene, params):
+    """Create an organic, asymmetric robot structure"""
+    scene.set_offset(0.0, 0.03)
+    start_x = params["start_x"]
+    start_y = params["start_y"]
+    depth = params["depth"]
+    branch_length = params["branch_length"]
+    angle = params["angle"]
+    actuation_start = params["actuation_start"]
+    ptype = params["ptype"]
+
+    # Add the organic branching structure
+    scene.add_organic_structure(start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params)
+
+    scene.finalize()
+
 # Updated function to create more interesting structures that move well
 def create_complex_robot_v2(scene, params):
     """Create a more optimized branching structure using the provided parameters"""
     scene.offset_x = 0.0
-    scene.offset_y = 0.03 
+    scene.offset_y = 0.03
     
     # Add the primary structure
     start_x = params["start_x"]
     start_y = params["start_y"]
     
-    # Add a base platform for better ground contact and stability
-    base_width = 0.05
-    base_height = 0.015
-    scene.add_rect(start_x - base_width/2, start_y - base_height, base_width, base_height, 0, ptype=1)
+    # Replace rectangular base with a small circle for more organic look
+    base_radius = 0.02
+    scene.add_circle(start_x, start_y - 0.01, base_radius, 0, ptype=1)
     
-    # Add branching structure on top of the base
-    scene.add_branching_structure_v2(
+    # Add branching structure
+    scene.add_random_branching_structure(
         start_x, start_y, 
         params["depth"], 
         params["branch_length"], 
@@ -815,6 +941,185 @@ def mutate_v2(params, mutation_rate=0.1):
     
     return mutated
 
+# New branching structure function that creates more random, organic shapes
+def add_random_branching_structure(self, start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params):
+    """Create a more random, organic branching structure"""
+    if depth <= 0:
+        return
+        
+    # Add randomness to the angle
+    angle_jitter = params.get("angle_jitter", math.pi/8)
+    angle += random.uniform(-angle_jitter, angle_jitter)
+    
+    # Add randomness to branch length
+    length_jitter = params.get("length_jitter", 0.2)
+    branch_length *= (1.0 + random.uniform(-length_jitter, length_jitter))
+    
+    # Calculate end point
+    end_x = start_x + branch_length * math.cos(angle)
+    end_y = start_y + branch_length * math.sin(angle)
+    
+    # Add particles along branch with reduced density
+    # Adjust density based on branch level to save particles
+    n_points = max(3, int(branch_length / (dx * (depth + 1))))
+    
+    prev_particle_idx = None
+    for i in range(n_points):
+        t = i / (n_points - 1)
+        x_pos = start_x + t * (end_x - start_x)
+        y_pos = start_y + t * (end_y - start_y)
+        
+        # Random thickness variation
+        thickness_variation = params.get("thickness_variation", 0.2)
+        thickness = params["thickness"] * (1.0 + random.uniform(-thickness_variation, thickness_variation))
+        
+        # For non-terminal branches, use full thickness
+        if depth > 1:
+            thickness_range = range(-1, 2)  # 3 particles thick
+        else:
+            # Give 50% chance to have 3 particles thick even for terminal branches
+            if random.random() < 0.5:
+                thickness_range = range(-1, 2)
+            else:
+                thickness_range = range(0, 1)  # Terminal branches are single line
+            
+        for j in thickness_range:
+            offset_x = -j * thickness * math.sin(angle)
+            offset_y = j * thickness * math.cos(angle)
+            
+            # Add particle
+            self.x.append([x_pos + offset_x + self.offset_x, y_pos + offset_y + self.offset_y])
+            
+            # Add variance to actuation IDs to create more complex motion
+            actuator_variance = params.get("actuator_variance", True)
+            if actuator_variance:
+                # Create wave patterns of actuation along branches
+                act_id = (actuation_start + i % 2) % max(1, params.get("num_actuators", 5))
+            else:
+                act_id = actuation_start
+                
+            self.actuator_id.append(act_id)
+            self.particle_type.append(ptype)
+            self.n_particles += 1
+            self.n_solid_particles += int(ptype == 1)
+            
+            # Update max actuator count
+            if act_id != -1:
+                self.n_actuators = max(self.n_actuators, act_id + 1)
+                
+            # Add springs
+            if prev_particle_idx is not None and j == 0:
+                # Variable stiffness for more organic movement
+                stiffness_variation = params.get("stiffness_variation", 0.3)
+                spring_stiffness = params["stiffness"] * (1.0 + random.uniform(-stiffness_variation, stiffness_variation))
+                self.add_spring(prev_particle_idx, self.n_particles - 1, spring_stiffness, params["damping"])
+                
+            if j != thickness_range.start and j < len(thickness_range) - 1:
+                self.add_spring(self.n_particles - 1, self.n_particles - 2, params["stiffness"], params["damping"])
+                
+        prev_particle_idx = self.n_particles - 1
+    
+    # Determine how many sub-branches to create
+    sub_branch_count_variation = params.get("sub_branch_variation", 1)
+    num_sub_branches = max(0, params["num_sub_branches"] + 
+                          random.randint(-sub_branch_count_variation, sub_branch_count_variation))
+    
+    # Random sub-branch growing point
+    sub_branch_position_variation = params.get("position_variation", True)
+    
+    # Create sub-branches
+    for i in range(num_sub_branches):
+        # Randomize sub-branch position along main branch
+        if sub_branch_position_variation and depth > 1:
+            # Can branch from anywhere along the branch
+            branch_pos = random.uniform(0.3, 1.0)
+            sub_start_x = start_x + branch_pos * (end_x - start_x)
+            sub_start_y = start_y + branch_pos * (end_y - start_y)
+        else:
+            # Branch from the end
+            sub_start_x = end_x
+            sub_start_y = end_y
+        
+        # Calculate sub-branch angle
+        # More randomness in angles for interesting shapes
+        if params.get("random_angles", False):
+            # Completely random angle
+            sub_angle = random.uniform(0, 2 * math.pi)
+        else:
+            # More controlled angle based on parent branch
+            # Create more interesting patterns with asymmetry
+            if i < num_sub_branches // 2:
+                side_factor = -1.0  # Left side
+            else:
+                side_factor = 1.0  # Right side
+                
+            # Random angle spread
+            angle_spread = params.get("angle_spread", 0.7)
+            sub_angle = angle + side_factor * (params["sub_branch_angle"] * 
+                                              (1.0 + random.uniform(-angle_spread, angle_spread)))
+        
+        # Sub-branch length
+        length_ratio = params["sub_branch_length_ratio"]
+        # Create right-side bias if specified
+        if hasattr(params, "right_bias") and side_factor > 0:
+            length_ratio *= params["right_bias"]
+            
+        # Add more randomness to sub-branch length
+        sub_length_variation = params.get("sub_length_variation", 0.3)
+        sub_length = branch_length * length_ratio * (1.0 + random.uniform(-sub_length_variation, sub_length_variation))
+        
+        # Recursive call with depth-1
+        self.add_random_branching_structure(
+            sub_start_x, sub_start_y, 
+            depth - 1, 
+            sub_length,
+            sub_angle,
+            (actuation_start + 1) % max(1, params.get("num_actuators", 5)),
+            ptype,
+            params
+        )
+
+# Generate more interesting and varied parameter sets
+def generate_random_structure_params(max_particles):
+    """Generate parameters for more random, organic structures"""
+    params = {
+        # Basic structure parameters
+        "start_x": random.uniform(0.1, 0.2),
+        "start_y": random.uniform(0.08, 0.15),  # Start higher off ground
+        "depth": random.randint(2, 3),  # Control recursion depth
+        "branch_length": random.uniform(0.05, 0.09),
+        "angle": random.uniform(-math.pi/4, math.pi/4),  # More variation in starting angle
+        "thickness": random.uniform(0.003, 0.007),
+        "stiffness": random.uniform(450.0, 550.0),
+        "damping": random.uniform(0.03, 0.06),
+        "num_sub_branches": random.randint(2, 4),
+        "sub_branch_angle": random.uniform(math.pi/6, math.pi/2),  
+        "sub_branch_length_ratio": random.uniform(0.5, 0.8),
+        "actuation_start": 0,
+        "ptype": 1,
+        
+        # New parameters for random structures
+        "num_starting_branches": random.randint(2, 5),  # Multiple starting branches
+        "starting_angle_spread": random.uniform(math.pi/3, math.pi),  # Spread of starting angles
+        "angle_jitter": random.uniform(0.1, 0.3),  # Random angle variations
+        "length_jitter": random.uniform(0.1, 0.3),  # Random length variations
+        "thickness_variation": random.uniform(0.1, 0.3),  # Variation in thickness
+        "stiffness_variation": random.uniform(0.1, 0.3),  # Variation in spring stiffness
+        "sub_branch_variation": random.randint(0, 2),  # Variation in number of sub-branches
+        "position_variation": random.random() < 0.7,  # Allow branches from different positions
+        "angle_spread": random.uniform(0.3, 0.7),  # Spread factor for sub-branch angles
+        "sub_length_variation": random.uniform(0.1, 0.3),  # Variation in sub-branch length
+        "random_angles": random.random() < 0.3,  # Chance for completely random angles
+        "actuator_variance": random.random() < 0.8,  # Varied actuation patterns
+        "num_actuators": random.randint(3, 6)  # Number of different actuator types
+    }
+    
+    # Sometimes include right bias for directional movement
+    if random.random() < 0.6:  # 60% chance
+        params["right_bias"] = random.uniform(1.1, 1.3)
+    
+    # Adjust particle density based on structure complexity
+    return adaptive_particle_density(params, max_particles)
 
 def create_complex_robot(scene, params):
     """Create a snowflake-like structure using the provided parameters"""
@@ -914,13 +1219,13 @@ def randomize_snowflake_params():
         "start_x": random.uniform(0.1, 0.3),
         "start_y": random.uniform(0.4, 0.6),
         # Reduce complexity to prevent CUDA memory issues
-        "depth": random.randint(1, 2),  # Maximum depth of 2 
+        "depth": random.randint(1, 4),  # Maximum depth of 2 
         "branch_length": random.uniform(0.05, 0.1),  # Shorter branches
         "angle": random.uniform(0, 2 * math.pi),
         "thickness": random.uniform(0.005, 0.01),
         "stiffness": random.uniform(400.0, 600.0),
         "damping": random.uniform(0.03, 0.07),
-        "num_sub_branches": random.randint(2, 3),  # Fewer branches
+        "num_sub_branches": random.randint(2, 5),  # Fewer branches
         "sub_branch_angle": random.uniform(math.pi / 4, math.pi / 2),
         "sub_branch_length_ratio": random.uniform(0.5, 0.7),
         "actuation_start": 0,
@@ -1024,11 +1329,27 @@ import os
 from datetime import datetime
 import shutil
 
+def create_snowflake_structure(scene, params):
+    """Create a snowflake-like structure using the provided parameters"""
+    scene.set_offset(0.5, 0.5)  # Center the structure
+    start_x = params["start_x"]
+    start_y = params["start_y"]
+    depth = params["depth"]
+    branch_length = params["branch_length"]
+    angle = params["angle"]
+    actuation_start = params["actuation_start"]
+    ptype = params["ptype"]
+
+    # Add the snowflake-like branching structure
+    scene.add_branching_structure(start_x, start_y, depth, branch_length, angle, actuation_start, ptype, params)
+
+    scene.finalize()
+    
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--iters', type=int, default=100)
-    parser.add_argument('--population_size', type=int, default=6)
-    parser.add_argument('--num_generations', type=int, default=4)
+    parser.add_argument('--population_size', type=int, default=8)
+    parser.add_argument('--num_generations', type=int, default=30)
     parser.add_argument('--max_particles', type=int, default=5000)
     parser.add_argument('--mode', type=str, default='evolve', 
                         choices=['evolve', 'test', 'test_best', 'save_best'],
@@ -1093,7 +1414,7 @@ def main():
         allocate_fields()
 
         # Apply monkey patches to add new methods to Scene class
-        Scene.add_branching_structure_v2 = add_branching_structure_v2
+        Scene.add_random_branching_structure = add_random_branching_structure
         
         # Run optimized evolution
         best_structure = evolutionary_optimization_v2(
@@ -1117,7 +1438,7 @@ def main():
             
             # Create the best structure for visualization
             scene = Scene()
-            create_complex_robot_v2(scene, best_structure)
+            create_snowflake_structure(scene, best_structure)
             
             # Initialize particles
             for i in range(scene.n_particles):
@@ -1154,7 +1475,7 @@ def main():
         except:
             print("Warning: Error during ti.reset()")
         print("Done!")
-
+        
 def run_evolution_with_preset_population(population_folder, num_generations=5, max_particles=2000):
     """
     Run a full evolution simulation using a preset population loaded from CSV files.
@@ -1235,7 +1556,7 @@ def run_evolution_with_preset_population(population_folder, num_generations=5, m
             reset_fields()
             
             scene = Scene()
-            create_complex_robot_v2(scene, best_structure)
+            create_snowflake_structure(scene, best_structure)
             
             for i in range(scene.n_particles):
                 x[0, i] = scene.x[i]
@@ -1335,7 +1656,7 @@ def evolutionary_optimization_v2(population_size, num_generations, run_folder, m
             # Try to create and evaluate the structure
             try:
                 scene = Scene()
-                create_complex_robot_v2(scene, params)
+                create_snowflake_structure(scene, params)
                 
                 if scene.n_particles > max_particles:
                     print(f"Structure {idx + 1} has too many particles ({scene.n_particles}). Skipping.")
