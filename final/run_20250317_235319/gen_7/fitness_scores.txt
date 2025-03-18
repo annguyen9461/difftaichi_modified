@@ -1,0 +1,10 @@
+Structure 1: -0.1512010395526886 (previously evaluated)
+Structure 2: -0.19795875251293182 (previously evaluated)
+Structure 3: -0.20866811275482178 (previously evaluated)
+Structure 4: -0.20950236916542053 (previously evaluated)
+Structure 5: -0.221658393740654 (previously evaluated)
+Structure 6: -0.22351807355880737 (previously evaluated)
+Structure 7: -0.24168694019317627 (previously evaluated)
+Structure 8: -0.15584738552570343
+Structure 9: -0.23653462529182434
+Structure 10: -0.15651002526283264

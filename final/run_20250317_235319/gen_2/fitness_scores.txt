@@ -1,0 +1,10 @@
+Structure 1: -0.19795875251293182 (previously evaluated)
+Structure 2: -0.24168694019317627 (previously evaluated)
+Structure 3: -0.2606447637081146 (previously evaluated)
+Structure 4: -0.3314761221408844 (previously evaluated)
+Structure 5: -0.34677714109420776 (previously evaluated)
+Structure 6: -0.415978342294693 (previously evaluated)
+Structure 7: -0.4603652358055115 (previously evaluated)
+Structure 8: nan
+Structure 9: -0.149473637342453
+Structure 10: -0.2621666193008423
