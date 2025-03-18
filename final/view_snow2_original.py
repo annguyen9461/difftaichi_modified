@@ -483,13 +483,59 @@ def load_params_from_csv(filename):
         
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--iters', type=int, default=10)
+    parser.add_argument('--iters', type=int, default=100)
     options = parser.parse_args()
 
-    # Create a unique folder for this run
-    run_folder = datetime.now().strftime("view_%Y%m%d_%H%M%S")
-    os.makedirs(run_folder, exist_ok=True)
+    # Define snowflake parameters
+    # snowflake_params = {
+    #     "start_x": 0.1,
+    #     "start_y": 0.5,
+    #     "depth": 3,
+    #     "branch_length": 0.1,
+    #     "angle": 0,
+    #     "thickness": 0.02,
+    #     "stiffness": 500.0,
+    #     "damping": 0.05,
+    #     "num_sub_branches": 6,
+    #     "sub_branch_angle": math.pi / 3,
+    #     "sub_branch_length_ratio": 0.6,
+    #     "actuation_start": 0,
+    #     "ptype": 1
+    # }
 
+    # smaller snowflake
+    # snowflake_params = {
+    #     "start_x": 0.1,
+    #     "start_y": 0.5,
+    #     "depth": 2,  # Reduced depth for fewer branches
+    #     "branch_length": 0.05,  # Reduced branch length for a smaller snowflake
+    #     "angle": 0,
+    #     "thickness": 0.01,  # Reduced thickness for thinner branches
+    #     "stiffness": 500.0,
+    #     "damping": 0.05,
+    #     "num_sub_branches": 6,
+    #     "sub_branch_angle": math.pi / 3,
+    #     "sub_branch_length_ratio": 0.6,
+    #     "actuation_start": 0,
+    #     "ptype": 1
+    # }
+    
+    # PARAMS FROM FILE
+    # Load parameters from a CSV file
+    # meh
+    # filename = "config/snowflake_config_20250304_111823.csv"
+    # filename = "config/snowflake_config_20250304_095109.csv"
+
+
+    # broken
+    # filename = "config/snowflake_config_20250304_104434.csv"
+    # filename = "config/snowflake_config_20250304_095003.csv"
+
+    # intesting
+    # filename = "config/snowflake_config_20250304_114509.csv"
+
+    # filename = "run_20250311_133620/best_structure.csv/snowflake_config_20250311_133631.csv"
+    # filename = ""
     filename = "/home/annguyen/classes/artificial-life/difftaichi_modified/final/param-test.csv"
     snowflake_params = load_params_from_csv(filename)
 
@@ -544,22 +590,14 @@ def main():
             # Visualize
             forward(1500)
             for s in range(15, 1500, 16):
-                visualize(s, f'{run_folder}/iter{iter:03d}/')
+                visualize(s, 'diffmpm/iter{:03d}/'.format(iter))
 
     # Plot loss
     plt.title("Optimization of Initial Velocity")
     plt.ylabel("Loss")
     plt.xlabel("Gradient Descent Iterations")
     plt.plot(losses)
-    # plt.show()
-    plt.savefig(f'{run_folder}/loss_plot.png')
-
-    # Save the fitness score and other relevant data to a CSV file
-    with open(f'{run_folder}/run_data.csv', mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Iteration", "Loss"])
-        for i, loss_value in enumerate(losses):
-            writer.writerow([i, loss_value])
+    plt.show()
 
 if __name__ == '__main__':
     main()

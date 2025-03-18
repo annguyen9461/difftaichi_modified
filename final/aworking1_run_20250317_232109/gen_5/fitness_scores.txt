@@ -1,0 +1,3 @@
+Structure 1: -0.17377442121505737 (previously evaluated)
+Structure 2: -0.17377442121505737 (previously evaluated)
+Structure 3: -0.17377442121505737 (previously evaluated)

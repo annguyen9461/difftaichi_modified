@@ -127,7 +127,7 @@ def evaluate_fitness(params):
     print(f"Testing configuration: {params}")
 
     # Define the path to view_snow2.py
-    view_snow2_path = "display.py"
+    view_snow2_path = "/home/annguyen/classes/artificial-life/difftaichi_modified/final/view_snow2.py"
 
     try:
         # Run view_snow2.py as a subprocess
@@ -830,8 +830,8 @@ def main():
     # Now load the evaluated configs
     evaluated_configs = load_fitness_from_csv(fitness_csv_file)
 
-    population_size = 3
-    num_generations = 4
+    population_size = 10
+    num_generations = 30
     max_particles = 10000
 
     best_params = evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs)
@@ -1007,8 +1007,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
 
 def generate_next_generation(run_folder, population_size):
     """
-    Generate the next generation of configurations based ONLY on the most recent generation's top performers.
-    The top 70% performers from the latest generation are kept and the bottom 30% are replaced with random configurations.
+    Generate the next generation of configurations based on the fitness scores in fitness.csv.
     """
     # Load fitness data
     fitness_csv_file = os.path.join(run_folder, "fitness.csv")
@@ -1020,7 +1019,6 @@ def generate_next_generation(run_folder, population_size):
     
     # Load evaluated configurations and their fitness scores
     fitness_scores = []
-    latest_generation = None
     
     try:
         with open(fitness_csv_file, 'r') as file:
@@ -1030,104 +1028,84 @@ def generate_next_generation(run_folder, population_size):
             # Find the indices of key columns
             param_names = [col for col in header if col != "Fitness" and col != "Generation"]
             fitness_idx = header.index("Fitness") if "Fitness" in header else None
-            generation_idx = header.index("Generation") if "Generation" in header else None
             
             if fitness_idx is None:
                 print("Error: 'Fitness' column not found in CSV.")
                 return [randomize_snowflake_params() for _ in range(population_size)]
             
-            if generation_idx is None:
-                print("Error: 'Generation' column not found in CSV.")
-                return [randomize_snowflake_params() for _ in range(population_size)]
-            
-            # First find the latest generation number
-            all_configs = []
+            # Process each row
             for row in reader:
-                if len(row) <= max(fitness_idx, generation_idx):
+                if len(row) <= fitness_idx:
                     continue  # Skip incomplete rows
                 
-                # Get generation number
-                gen_num = int(float(row[generation_idx]))
+                # Extract parameters
+                params = {}
+                for i, name in enumerate(param_names):
+                    if i < len(row):
+                        if name in ["depth", "num_sub_branches", "actuation_start", "ptype"]:
+                            params[name] = int(float(row[i]))
+                        else:
+                            params[name] = float(row[i])
                 
-                # Update latest generation
-                if latest_generation is None or gen_num > latest_generation:
-                    latest_generation = gen_num
+                # Extract fitness
+                fitness = float(row[fitness_idx])
                 
-                all_configs.append(row)
-            
-            # Now filter configs by latest generation
-            if latest_generation is not None:
-                print(f"Focusing on generation {latest_generation} only")
-                for row in all_configs:
-                    if len(row) <= max(fitness_idx, generation_idx):
-                        continue
-                    
-                    gen_num = int(float(row[generation_idx]))
-                    
-                    # Only process configs from the latest generation
-                    if gen_num == latest_generation:
-                        # Extract parameters
-                        params = {}
-                        for i, name in enumerate(param_names):
-                            if i < len(row):
-                                if name in ["depth", "num_sub_branches", "actuation_start", "ptype"]:
-                                    params[name] = int(float(row[i]))
-                                else:
-                                    params[name] = float(row[i])
-                        
-                        # Extract fitness
-                        fitness = float(row[fitness_idx])
-                        
-                        # Add to fitness scores
-                        fitness_scores.append((fitness, params))
+                # Add to fitness scores
+                fitness_scores.append((fitness, params))
     except Exception as e:
         print(f"Error loading fitness data: {e}")
         return [randomize_snowflake_params() for _ in range(population_size)]
     
     if not fitness_scores:
-        print("No valid fitness scores found for the latest generation. Generating random configurations.")
+        print("No valid fitness scores found. Generating random configurations.")
         return [randomize_snowflake_params() for _ in range(population_size)]
 
     # Sort the population by fitness (descending order)
     fitness_scores.sort(key=lambda x: x[0], reverse=True)
-    print(f"Found {len(fitness_scores)} configurations from generation {latest_generation}")
 
-    # Calculate how many configurations to keep (70%) and how many to generate randomly (30%)
-    num_to_keep = max(1, int(population_size * 0.7))
-    num_random = population_size - num_to_keep
-    
-    print(f"Keeping top {num_to_keep} configurations and generating {num_random} random ones")
+    # Drop the bottom 30% performers (rounding down)
+    num_to_keep = max(2, population_size - int(0.3 * population_size))
+    fitness_scores = fitness_scores[:num_to_keep]
 
-    # Select the top performers for the next generation (only from the latest generation)
-    top_performers = [params for (fitness, params) in fitness_scores[:num_to_keep]]
-    
-    # Start with the top performers
+    # Select the top performers for crossover and mutation
+    top_performers = [params for (fitness, params) in fitness_scores]
+
+    # Create new population through crossover and mutation
     new_population = top_performers.copy()
-    
-    # Fill remaining slots (30%) with crossover/mutation first, 
-    # then use random configurations as the fallback
-    max_attempts = 50  # Maximum attempts to find a valid configuration
-    slots_remaining = population_size - len(new_population)
-    
-    # Try crossover and mutation first
-    crossover_attempts = 0
-    while len(new_population) < population_size and crossover_attempts < max_attempts:
+
+    # Add one new random configuration
+    max_attempts = 100  # Maximum attempts to find a valid configuration
+    new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
+    if new_random:
+        new_population.append(new_random)
+    else:
+        print("Failed to generate a valid random configuration after maximum attempts.")
+
+    # Fill the remaining slots with mutated and crossover configurations
+    while len(new_population) < population_size:
         if len(top_performers) >= 2:
             parent1, parent2 = random.sample(top_performers, 2)
-            child = generate_valid_configuration(lambda: mutate(crossover(parent1, parent2)), 10)
+            
+            # Generate a child through crossover and mutation
+            child = generate_valid_configuration(lambda: mutate(crossover(parent1, parent2)), max_attempts)
+            
             if child:
                 new_population.append(child)
-                continue
-        
-        crossover_attempts += 1
-        
-    # If we still have slots to fill, use random configurations as fallback
-    while len(new_population) < population_size:
-        # Random will always work eventually, so we add it without checking
-        # Just directly generate random parameters without testing
-        new_random = randomize_snowflake_params()
-        new_population.append(new_random)
-        print("Added random configuration as fallback")
+            else:
+                print("Failed to generate a valid child configuration after maximum attempts.")
+                # Fallback to a random configuration
+                new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
+                if new_random:
+                    new_population.append(new_random)
+        else:
+            # Not enough top performers for crossover, generate random config
+            new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
+            if new_random:
+                new_population.append(new_random)
+            else:
+                # As a last resort, just add a copy of the best performer
+                if top_performers:
+                    new_population.append(top_performers[0].copy())
 
     # Ensure we return exactly population_size configurations
     return new_population[:population_size]
