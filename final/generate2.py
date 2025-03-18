@@ -208,8 +208,10 @@ def save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=None
     If generation is provided, it will be included in the CSV.
     """
     file_exists = os.path.isfile(fitness_csv_file)
+    
     with open(fitness_csv_file, mode='a', newline='') as file:
         writer = csv.writer(file)
+        
         if not file_exists:
             # Write header if the file doesn't exist
             header = list(params.keys()) + ["Fitness"]
@@ -222,22 +224,67 @@ def save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=None
         if generation is not None:
             row.append(generation)
         writer.writerow(row)
+        
+    print(f"Saved fitness {fitness_score} for generation {generation} to {fitness_csv_file}")
 
 def load_fitness_from_csv(fitness_csv_file):
     """
     Load previously evaluated configurations and their fitness scores from a CSV file.
+    Returns a dictionary mapping parameter tuples to fitness scores.
     """
     evaluated_configs = {}
-    if os.path.isfile(fitness_csv_file):
+    
+    if not os.path.isfile(fitness_csv_file):
+        print(f"Fitness file {fitness_csv_file} does not exist yet")
+        return evaluated_configs
+        
+    try:
         with open(fitness_csv_file, mode='r') as file:
             reader = csv.reader(file)
-            header = next(reader)  # Skip the header row
+            header = next(reader)  # Get the header
+            
+            # Find indices of important columns
+            param_indices = []
+            fitness_idx = None
+            generation_idx = None
+            
+            for i, col in enumerate(header):
+                if col == "Fitness":
+                    fitness_idx = i
+                elif col == "Generation":
+                    generation_idx = i
+                else:
+                    param_indices.append(i)
+            
+            if fitness_idx is None:
+                print(f"Error: 'Fitness' column not found in {fitness_csv_file}")
+                return evaluated_configs
+            
+            # Process rows
             for row in reader:
-                params = {key: float(value) if "." in value else int(value) for key, value in zip(header[:-1], row[:-1])}
-                fitness_score = float(row[-1])
-                evaluated_configs[tuple(params.values())] = fitness_score
+                if len(row) <= fitness_idx:
+                    continue  # Skip incomplete rows
+                
+                # Extract parameter values
+                param_values = []
+                for idx in param_indices:
+                    if idx < len(row):
+                        param_values.append(float(row[idx]) if '.' in row[idx] else int(row[idx]))
+                
+                # Create a tuple for the dictionary key
+                param_tuple = tuple(param_values)
+                
+                # Extract fitness
+                fitness_score = float(row[fitness_idx])
+                
+                # Store in dictionary
+                evaluated_configs[param_tuple] = fitness_score
+                
+        print(f"Loaded {len(evaluated_configs)} configurations from {fitness_csv_file}")
+    except Exception as e:
+        print(f"Error loading fitness data from {fitness_csv_file}: {e}")
+    
     return evaluated_configs
-
 
 @ti.kernel
 def clear_grid():
@@ -768,6 +815,19 @@ def main():
     print(f"Created run folder: {run_folder}")
 
     fitness_csv_file = os.path.join(run_folder, "fitness.csv")
+    
+    # Make sure the file exists with headers before loading
+    if not os.path.exists(fitness_csv_file):
+        # Create an empty file with headers
+        with open(fitness_csv_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            # Create header with all possible parameter names plus Fitness and Generation
+            example_params = randomize_snowflake_params()
+            header = list(example_params.keys()) + ["Fitness", "Generation"]
+            writer.writerow(header)
+        print(f"Created empty fitness file: {fitness_csv_file}")
+    
+    # Now load the evaluated configs
     evaluated_configs = load_fitness_from_csv(fitness_csv_file)
 
     population_size = 3
@@ -775,7 +835,21 @@ def main():
     max_particles = 10000
 
     best_params = evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs)
-
+    
+    # Save the best configuration
+    best_config_file = os.path.join(run_folder, "best_config.csv")
+    save_params_to_csv(best_params, best_config_file)
+    print(f"Saved best configuration to: {best_config_file}")
+    
+    # Print summary of the run
+    print("\nEvolutionary Optimization Complete")
+    print(f"Run folder: {run_folder}")
+    print(f"Best configuration: {best_params}")
+    if tuple(best_params.values()) in evaluated_configs:
+        print(f"Best fitness score: {evaluated_configs[tuple(best_params.values())]}")
+    else:
+        print("Best fitness score unknown. Configuration may not have been evaluated.")
+        
 def reallocate_fields_if_needed():
     global n_particles, n_actuators
     if not hasattr(reallocate_fields_if_needed, 'last_n_particles'):
@@ -790,7 +864,7 @@ def reallocate_fields_if_needed():
         allocate_fields()
         reallocate_fields_if_needed.last_n_particles = n_particles
         reallocate_fields_if_needed.last_n_actuators = n_actuators
-        
+
 def evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs):
     # Generate initial valid configuration to set n_particles and n_actuators
     scene = Scene()
@@ -799,7 +873,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     scene.finalize()
     
     # Allocate fields for the first generation
-    allocate_fields()  # <-- Add this line
+    allocate_fields()
 
     # Initialize population with valid configurations
     population = []
@@ -817,6 +891,8 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
         if params_tuple in evaluated_configs:
             print(f"Configuration already evaluated. Fitness: {evaluated_configs[params_tuple]}")
             population.append(params)
+            config_file = os.path.join(gen_folder, f"structure_{len(population)}.csv")
+            save_params_to_csv(params, config_file)
             continue
 
         if test_configuration(params):  # Only add if the configuration is valid
@@ -836,8 +912,10 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
 
     all_fitness_scores = []
 
-    for generation in range(num_generations):
-        print(f"Generation {generation + 1}/{num_generations}")
+    # Loop through the remaining generations
+    for generation in range(1, num_generations):
+        current_gen = generation + 1  # Generation starts from 1, loop starts from 0
+        print(f"Generation {current_gen}/{num_generations}")
         
         # Reset global state
         global n_particles, n_solid_particles, n_actuators
@@ -849,7 +927,7 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
         ti.reset()
         ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
 
-        # Generate initial valid configuration to set n_particles and n_actuators
+        # Generate a valid configuration to initialize fields
         scene = Scene()
         params = randomize_snowflake_params()
         create_snowflake_structure(scene, params)
@@ -857,16 +935,9 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
         
         # Reallocate fields if n_particles or n_actuators has changed
         reallocate_fields_if_needed()
-
-        scene = Scene()
-        create_snowflake_structure(scene, params)
-        scene.finalize()
         
-        # Allocate fields for the first generation
-        allocate_fields()  # <-- Add this line
-        
-        print(f"Generation {generation + 1}/{num_generations}")
-        gen_folder = os.path.join(run_folder, f"gen_{generation + 1}")
+        # Create folder for the current generation
+        gen_folder = os.path.join(run_folder, f"gen_{current_gen}")
         os.makedirs(gen_folder, exist_ok=True)
         print(f"Created generation folder: {gen_folder}")
 
@@ -875,37 +946,48 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
 
         # Evaluate fitness for each individual in the population
         fitness_scores = []
-        for idx in range(population_size):
-            print(f"Evaluating structure {idx + 1}/{population_size}")
-            params = population[idx]
+        for idx, params in enumerate(population):
+            idx_1_based = idx + 1  # 1-based index for file naming
+            print(f"Evaluating structure {idx_1_based}/{population_size}")
             params_tuple = tuple(params.values())
+            
+            # Always save the configuration file, regardless of evaluation status
+            config_file = os.path.join(gen_folder, f"structure_{idx_1_based}.csv")
+            print(f"Saving configuration to: {config_file}")
+            try:
+                save_params_to_csv(params, config_file)
+                print(f"Successfully saved configuration to {config_file}")
+            except Exception as e:
+                print(f"Failed to save configuration to {config_file}: {e}")
 
             # Skip evaluation if the configuration has already been evaluated
             if params_tuple in evaluated_configs:
                 print(f"Configuration already evaluated. Fitness: {evaluated_configs[params_tuple]}")
-                fitness_scores.append((evaluated_configs[params_tuple], params))
-                all_fitness_scores.append((evaluated_configs[params_tuple], params))
+                fitness_score = evaluated_configs[params_tuple]
+                fitness_scores.append((fitness_score, params))
+                all_fitness_scores.append((fitness_score, params))
+                
+                # Make sure to save this to fitness CSV with the current generation
+                save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=current_gen)
+                
+                # Record fitness in the gen folder's fitness_scores.txt
+                with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
+                    f.write(f"Structure {idx_1_based}: {fitness_score} (previously evaluated)\n")
                 continue
 
             if test_configuration(params):  # Only evaluate if the configuration is valid
                 fitness_score = evaluate_fitness(params)
                 evaluated_configs[params_tuple] = fitness_score
-                save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=generation + 1)
+                save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=current_gen)
                 fitness_scores.append((fitness_score, params))
                 all_fitness_scores.append((fitness_score, params))
 
-                config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
-                print(f"Saving configuration to: {config_file}")
-                try:
-                    save_params_to_csv(params, config_file)
-                    print(f"Successfully saved configuration to {config_file}")
-                except Exception as e:
-                    print(f"Failed to save configuration to {config_file}: {e}")
-
                 with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
-                    f.write(f"Structure {idx + 1}: {fitness_score}\n")
+                    f.write(f"Structure {idx_1_based}: {fitness_score}\n")
             else:
-                print(f"Configuration {idx + 1} is invalid. Skipping evaluation.")
+                print(f"Configuration {idx_1_based} is invalid. Skipping evaluation.")
+                with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
+                    f.write(f"Structure {idx_1_based}: INVALID CONFIGURATION\n")
 
             gc.collect()
             time.sleep(0.2)
@@ -929,36 +1011,61 @@ def generate_next_generation(run_folder, population_size):
     """
     # Load fitness data
     fitness_csv_file = os.path.join(run_folder, "fitness.csv")
-    evaluated_configs = load_fitness_from_csv(fitness_csv_file)
-
-    # Convert evaluated_configs into a list of (fitness, params) tuples
+    
+    # Check if the fitness CSV file exists
+    if not os.path.exists(fitness_csv_file):
+        print(f"Warning: {fitness_csv_file} not found. Generating random configurations.")
+        return [randomize_snowflake_params() for _ in range(population_size)]
+    
+    # Load evaluated configurations and their fitness scores
     fitness_scores = []
-    for params_tuple, fitness in evaluated_configs.items():
-        # Convert the tuple back into a dictionary
-        params = {
-            "start_x": params_tuple[0],
-            "start_y": params_tuple[1],
-            "depth": params_tuple[2],
-            "branch_length": params_tuple[3],
-            "angle": params_tuple[4],
-            "thickness": params_tuple[5],
-            "stiffness": params_tuple[6],
-            "damping": params_tuple[7],
-            "num_sub_branches": params_tuple[8],
-            "sub_branch_angle": params_tuple[9],
-            "sub_branch_length_ratio": params_tuple[10],
-            "actuation_start": params_tuple[11],
-            "ptype": params_tuple[12],
-        }
-        fitness_scores.append((fitness, params))
+    
+    try:
+        with open(fitness_csv_file, 'r') as file:
+            reader = csv.reader(file)
+            header = next(reader)  # Get the header
+            
+            # Find the indices of key columns
+            param_names = [col for col in header if col != "Fitness" and col != "Generation"]
+            fitness_idx = header.index("Fitness") if "Fitness" in header else None
+            
+            if fitness_idx is None:
+                print("Error: 'Fitness' column not found in CSV.")
+                return [randomize_snowflake_params() for _ in range(population_size)]
+            
+            # Process each row
+            for row in reader:
+                if len(row) <= fitness_idx:
+                    continue  # Skip incomplete rows
+                
+                # Extract parameters
+                params = {}
+                for i, name in enumerate(param_names):
+                    if i < len(row):
+                        if name in ["depth", "num_sub_branches", "actuation_start", "ptype"]:
+                            params[name] = int(float(row[i]))
+                        else:
+                            params[name] = float(row[i])
+                
+                # Extract fitness
+                fitness = float(row[fitness_idx])
+                
+                # Add to fitness scores
+                fitness_scores.append((fitness, params))
+    except Exception as e:
+        print(f"Error loading fitness data: {e}")
+        return [randomize_snowflake_params() for _ in range(population_size)]
+    
+    if not fitness_scores:
+        print("No valid fitness scores found. Generating random configurations.")
+        return [randomize_snowflake_params() for _ in range(population_size)]
 
     # Sort the population by fitness (descending order)
     fitness_scores.sort(key=lambda x: x[0], reverse=True)
 
     # Drop the bottom 30% performers (rounding down)
-    num_to_drop = int(0.3 * population_size)
-    if num_to_drop > 0:
-        fitness_scores = fitness_scores[:-num_to_drop]
+    num_to_keep = max(2, population_size - int(0.3 * population_size))
+    fitness_scores = fitness_scores[:num_to_keep]
 
     # Select the top performers for crossover and mutation
     top_performers = [params for (fitness, params) in fitness_scores]
@@ -976,21 +1083,32 @@ def generate_next_generation(run_folder, population_size):
 
     # Fill the remaining slots with mutated and crossover configurations
     while len(new_population) < population_size:
-        parent1, parent2 = random.sample(top_performers, 2)
-        
-        # Generate a child through crossover and mutation
-        child = generate_valid_configuration(lambda: mutate(crossover(parent1, parent2)), max_attempts)
-        
-        if child:
-            new_population.append(child)
+        if len(top_performers) >= 2:
+            parent1, parent2 = random.sample(top_performers, 2)
+            
+            # Generate a child through crossover and mutation
+            child = generate_valid_configuration(lambda: mutate(crossover(parent1, parent2)), max_attempts)
+            
+            if child:
+                new_population.append(child)
+            else:
+                print("Failed to generate a valid child configuration after maximum attempts.")
+                # Fallback to a random configuration
+                new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
+                if new_random:
+                    new_population.append(new_random)
         else:
-            print("Failed to generate a valid child configuration after maximum attempts.")
-            # Fallback to a random configuration
+            # Not enough top performers for crossover, generate random config
             new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
             if new_random:
                 new_population.append(new_random)
+            else:
+                # As a last resort, just add a copy of the best performer
+                if top_performers:
+                    new_population.append(top_performers[0].copy())
 
-    return new_population
+    # Ensure we return exactly population_size configurations
+    return new_population[:population_size]
 
 def generate_valid_configuration(config_generator, max_attempts):
     """
