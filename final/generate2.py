@@ -58,19 +58,6 @@ actuation = scalar()
 actuation_omega = 20
 act_strength = 4
 
-# Field declarations (without allocation)
-actuator_id = None
-particle_type = None
-x, v = None, None
-grid_v_in, grid_m_in = None, None
-grid_v_out = None
-C, F = None, None
-loss = None
-x_avg = None
-weights = None
-bias = None
-actuation = None
-
 def allocate_fields():
     global actuator_id, particle_type, x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
     
@@ -105,6 +92,11 @@ def allocate_fields():
     ti.root.lazy_grad()
     
 def reset_fields():
+    if not hasattr(reset_fields, 'initialized'):
+        allocate_fields()  # Ensure fields are allocated before resetting
+        reset_fields.initialized = True
+    
+    # Reset field values
     x.fill(0)
     v.fill(0)
     C.fill(0)
@@ -661,42 +653,6 @@ def mutate(params):
                 params[key] += random.uniform(-0.1, 0.1)
     return params
 
-def reset_fields():
-    if not hasattr(reset_fields, 'initialized'):
-        allocate_fields()  # Ensure fields are allocated before resetting
-        reset_fields.initialized = True
-    """Reset Taichi fields to their initial state"""
-    print("Resetting Taichi fields...")
-    global x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
-    
-    # Clear matrices first to release memory
-    x.fill(0)
-    v.fill(0)
-    C.fill(0)
-    F.fill(0)
-    
-    # Reset matrices to proper values
-    for f in range(max_steps):
-        for i in range(n_particles):
-            F[f, i] = [[1, 0], [0, 1]]
-    
-    # Reset grid fields
-    grid_v_in.fill(0)
-    grid_m_in.fill(0)
-    grid_v_out.fill(0)
-    
-    # Reset actuation fields
-    actuation.fill(0)
-    weights.fill(0)
-    bias.fill(0)
-    
-    # Reset scalar fields
-    loss[None] = 0
-    x_avg[None] = [0, 0]
-    
-    # Force synchronization to make sure everything is cleared
-    ti.sync()
-
 import os
 from datetime import datetime
 import shutil
@@ -820,15 +776,30 @@ def main():
 
     best_params = evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs)
 
+def reallocate_fields_if_needed():
+    global n_particles, n_actuators
+    if not hasattr(reallocate_fields_if_needed, 'last_n_particles'):
+        reallocate_fields_if_needed.last_n_particles = n_particles
+        reallocate_fields_if_needed.last_n_actuators = n_actuators
+        allocate_fields()
+        return
+
+    if (n_particles != reallocate_fields_if_needed.last_n_particles or
+        n_actuators != reallocate_fields_if_needed.last_n_actuators):
+        print(f"Reallocating fields: n_particles={n_particles}, n_actuators={n_actuators}")
+        allocate_fields()
+        reallocate_fields_if_needed.last_n_particles = n_particles
+        reallocate_fields_if_needed.last_n_actuators = n_actuators
+        
 def evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs):
-     # Generate initial valid configuration to set n_particles and n_actuators
+    # Generate initial valid configuration to set n_particles and n_actuators
     scene = Scene()
     params = randomize_snowflake_params()
     create_snowflake_structure(scene, params)
     scene.finalize()
     
     # Allocate fields for the first generation
-    allocate_fields()
+    allocate_fields()  # <-- Add this line
 
     # Initialize population with valid configurations
     population = []
@@ -865,7 +836,35 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
 
     all_fitness_scores = []
 
-    for generation in range(1, num_generations):  # Start from generation 1
+    for generation in range(num_generations):
+        print(f"Generation {generation + 1}/{num_generations}")
+        
+        # Reset global state
+        global n_particles, n_solid_particles, n_actuators
+        n_particles = 0
+        n_solid_particles = 0
+        n_actuators = 0
+
+        # Clear Taichi fields and reset the runtime
+        ti.reset()
+        ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
+
+        # Generate initial valid configuration to set n_particles and n_actuators
+        scene = Scene()
+        params = randomize_snowflake_params()
+        create_snowflake_structure(scene, params)
+        scene.finalize()
+        
+        # Reallocate fields if n_particles or n_actuators has changed
+        reallocate_fields_if_needed()
+
+        scene = Scene()
+        create_snowflake_structure(scene, params)
+        scene.finalize()
+        
+        # Allocate fields for the first generation
+        allocate_fields()  # <-- Add this line
+        
         print(f"Generation {generation + 1}/{num_generations}")
         gen_folder = os.path.join(run_folder, f"gen_{generation + 1}")
         os.makedirs(gen_folder, exist_ok=True)
@@ -969,48 +968,41 @@ def generate_next_generation(run_folder, population_size):
 
     # Add one new random configuration
     max_attempts = 100  # Maximum attempts to find a valid configuration
-    attempts = 0
-    while attempts < max_attempts:
-        new_random = randomize_snowflake_params()
-        if test_configuration(new_random):
-            new_population.append(new_random)
-            break
-        attempts += 1
+    new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
+    if new_random:
+        new_population.append(new_random)
     else:
         print("Failed to generate a valid random configuration after maximum attempts.")
 
     # Fill the remaining slots with mutated and crossover configurations
     while len(new_population) < population_size:
-        max_attempts = 100  # Maximum attempts to find a valid configuration
-        attempts = 0
-        while attempts < max_attempts:
-            parent1, parent2 = random.sample(top_performers, 2)
-            child = crossover(parent1, parent2)
-            if test_configuration(child):
-                new_population.append(child)
-                break
-            attempts += 1
+        parent1, parent2 = random.sample(top_performers, 2)
+        
+        # Generate a child through crossover and mutation
+        child = generate_valid_configuration(lambda: mutate(crossover(parent1, parent2)), max_attempts)
+        
+        if child:
+            new_population.append(child)
         else:
-            print("Failed to generate a valid crossover configuration after maximum attempts.")
-            new_random = randomize_snowflake_params()
-            if test_configuration(new_random):
-                new_population.append(new_random)
-
-        attempts = 0
-        while attempts < max_attempts:
-            parent1, parent2 = random.sample(top_performers, 2)
-            child = mutate(parent1, parent2)
-            if test_configuration(child):
-                new_population.append(child)
-                break
-            attempts += 1
-        else:
-            print("Failed to generate a valid mutated configuration after maximum attempts.")
-            new_random = randomize_snowflake_params()
-            if test_configuration(new_random):
+            print("Failed to generate a valid child configuration after maximum attempts.")
+            # Fallback to a random configuration
+            new_random = generate_valid_configuration(randomize_snowflake_params, max_attempts)
+            if new_random:
                 new_population.append(new_random)
 
     return new_population
+
+def generate_valid_configuration(config_generator, max_attempts):
+    """
+    Helper function to generate a valid configuration using the provided generator function.
+    """
+    attempts = 0
+    while attempts < max_attempts:
+        config = config_generator()
+        if test_configuration(config):
+            return config
+        attempts += 1
+    return None
 
 def generate_parameters():
     params = {
