@@ -1,105 +1,80 @@
-<div align="center">
-  <h3> python3 diffmpm.py </h3>
-  <img  width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/diffmpm80.gif">
-</div>        
+# Snowflake Evolution
 
+An evolutionary algorithm implementation for evolving virtual snowflake structures with locomotion capabilities using the Taichi differentiable physics engine.
 
-# DiffTaichi: Differentiable Programming for Physical Simulation (ICLR 2020)
+## Overview
 
-*Yuanming Hu, Luke Anderson, Tzu-Mao Li, Qi Sun, Nathan Carr, Jonathan Ragan-Kelley, Frédo Durand*
+This repository contains a genetic algorithm implementation that evolves branching, snowflake-like structures capable of movement through a simulated physical environment. The algorithm optimizes the structures for horizontal movement across a surface using a Material Point Method (MPM) physics simulation by modifying diffmpm.py from https://github.com/taichi-dev/difftaichi/tree/master.
 
-[[Paper]](https://arxiv.org/abs/1910.00935) [[Video] (with instructions to reproduce every demo)](https://www.youtube.com/watch?v=Z1xvAZve9aE)
+The project consists of two main components:
+- `generate.py`: The main evolutionary algorithm that generates and evolves structures
+- `display.py`: A visualization and simulation subprocess that tests the validity of generated configurations
 
-### Differentiable programming in Taichi allows you to optimize neural network controllers efficiently with brute-force gradient descent, instead of using reinforcement learning.
+## Features
 
-The *DiffTaichi* differentiable programming framework is now officially part of [Taichi](https://github.com/yuanming-hu/taichi). This repo only contains examples.
+- Genetic algorithm with configurable population size and generation count
+- Branching tree-like structures with customizable parameters
+- Fitness evaluation based on horizontal movement
+- Spring connections between particles
+- Random parameter generation
+- Crossover and mutation operations
+- Automatic saving of generation data and best configurations
 
-DiffTaichi significantly boosts the performance and productivity of differentiable physical simulators. For example, the differentiable elastic object simulator (ChainQueen) in DiffTaichi is 188x faster than an implementation in TensorFlow. The DiffTaichi version also runs as fast as the CUDA implementation, with the code being 4.2x shorter.
+## Requirements
 
-Most of the 10 differentiable simulators can be implemented **within 2-3 hours**.
+- Python 3.7+
+- Taichi 0.8.0+
+- NumPy
+- Matplotlib
 
-Questions regarding the simulators/autodiff compiler go to Yuanming Hu (yuanming __at__ mit.edu) or [Issues](https://github.com/yuanming-hu/difftaichi/issues).
+## Usage
 
-### Note: Updates on October 27 2021
-Examples are now compatible with Taichi `v0.8.3`. Please update Taichi if you are using an old version.
-
-## How to run
-Step 1: Install [`Taichi`](https://github.com/taichi-dev/taichi) with `pip`:
-
-(Most examples do **not** need a GPU to run.)
+Run the main evolutionary algorithm with default parameters:
 ```bash
-python3 -m pip install taichi
+python generate.py
 ```
-Step 2: Run example scripts in the `examples` folder: (Please wait for all GIFs to load :-)
 
+### Command-line Options
 
-### Differentiable Elastic Object Simulator [`python3 diffmpm.py`]
-Gradient descent iteration 0 and gradient descent iteration 80: 
+The algorithm supports the following command-line arguments:
 
-<img width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/diffmpm00.gif"> <img  width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/diffmpm80.gif">
+- `--population`: Population size for each generation (default: 20)
+- `--generations`: Number of generations to evolve (default: 100)
+- `--max-particles`: Maximum number of particles allowed (default: 10000)
 
-### Differentiable 3D Elastic Object Simulator [`python3 diffmpm3d.py`]
-Gradient descent iteration 40: 
+Example with custom parameters:
+```bash
+python generate.py --population 30 --generations 50 --max-particles 15000
+```
 
-<img width="800px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/diffmpm3d.gif">
+## Output
 
-### Differentiable 3D Fluid Simulator [`python3 liquid.py`]
-Gradient descent iteration 450: 
-
-<img width="800px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/liquid.gif">
-
-### Differentiable Height Field Water Simulator [`python3 wave.py`]
-Gradient descent iteration 180:
-
-<img width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/wave.gif">
-
-### Differentiable (Adversarial) Water Renderer [`python3 water_renderer.py`]
-Differentiable water simulation + differentiable water rendering + (differentiable) CNN
-
-**Optimization goal:** find an initial water height field, so that after simulation and shading, VGG16 thinks the squirrel image is a goldfish. Input image: VGG16=fox squirrel (42.21%)
-
-<img width="800px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/three-stage.jpg">
-
-**Left:** center activation .  **Right:** An activation that fools VGG (VGG16=goldfish (99.91%))
-
-<img width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/water_wave_center.gif"><img width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/water_wave_iter10.gif">
-
-
-### Differentiable Rigid Body Simulator [`python3 rigid_body.py [1/2] train`]
-2048 time steps. Gardient descent iteration 20: 
-
-<img width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/rb_final1.gif"> <img  width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/rb_final2.gif">
-
-### Differentiable Mass-Spring Simulator [`python3 mass_spring.py [1/2/3] train`]
-682 time steps.
-Gardient descent iteration 20: 
-
-<img width="266px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/ms1_final-cropped.gif">  <img width="266px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/ms2_final-cropped.gif">  <img width="266px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/ms3_final-cropped.gif"> 
-
-### Differentiable Billiard Simulator [`python3 billiards.py`]
-Gardient descent iteration 0 and gradient descent iteration 100: 
-
-<img width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/billiard0000.gif"> <img  width="400px" src="https://github.com/yuanming-hu/public_files/raw/master/learning/difftaichi/billiard0100.gif">
-
-See the video for the remaining two simulators.
-
-## Bibtex
+The algorithm creates a folder named `run_YYYYMMDD_HHMMSS` for each run with the following structure:
 
 ```
-@article{hu2019difftaichi,
-  title={DiffTaichi: Differentiable Programming for Physical Simulation},
-  author={Hu, Yuanming and Anderson, Luke and Li, Tzu-Mao and Sun, Qi and Carr, Nathan and Ragan-Kelley, Jonathan and Durand, Fr{\'e}do},
-  journal={ICLR},
-  year={2020}
-}
-@article{hu2019taichi,
-  title={Taichi: a language for high-performance computation on spatially sparse data structures},
-  author={Hu, Yuanming and Li, Tzu-Mao and Anderson, Luke and Ragan-Kelley, Jonathan and Durand, Fr{\'e}do},
-  journal={ACM Transactions on Graphics (TOG)},
-  volume={38},
-  number={6},
-  pages={201},
-  year={2019},
-  publisher={ACM}
-}
+run_20250318_123456/
+├── fitness.csv                  # All configurations with fitness and generation number
+├── best_config.csv              # The best configuration found
+├── run_params.txt               # Parameters used for this run
+├── gen_1/
+│   ├── structure_1.csv
+│   ├── structure_2.csv
+│   └── fitness_scores.txt       # Fitness scores for this generation
+├── gen_2/
+└── ...
 ```
+
+Each generation folder contains the structure parameters and fitness scores for that generation.
+
+## How It Works
+
+1. The algorithm generates a population of random structures
+2. Each structure is simulated using the physics engine to evaluate its movement capability
+3. The best performers are selected to produce the next generation through:
+   - Copying the top performers (70%)
+   - Applying crossover and mutation to generate new variants
+   - Adding random structures as needed
+4. This process continues for the specified number of generations
+5. The best configuration found is saved for future use
+
+This will run the physics simulation and display the structure's movement in real-time.
