@@ -20,12 +20,38 @@ The project consists of two main components:
 - Crossover and mutation operations
 - Automatic saving of generation data and best configurations
 
-## Requirements
+## Setup
 
-- Python 3.7+
-- Taichi 0.8.0+
-- NumPy
-- Matplotlib
+1. Clone the repository:
+```bash
+git clone git@github.com:annguyen9461/difftaichi_modified.git
+cd difftaichi_modified
+```
+
+2. Set up a virtual environment with the required dependencies:
+```bash
+# Create a virtual environment
+python -m venv venv
+
+# Activate the environment
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies from requirements.txt
+pip install -r requirements.txt
+```
+
+The requirements file includes:
+- taichi>=1.1.0
+- matplotlib
+- numpy
+- opencv-python
+- scipy
+- imageio
+- torch
+- torchvision
 
 ## Usage
 
