@@ -483,14 +483,14 @@ def load_params_from_csv(filename):
         
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--iters', type=int, default=10)
+    parser.add_argument('--iters', type=int, default=100)
     options = parser.parse_args()
 
     # Create a unique folder for this run
     run_folder = datetime.now().strftime("view_%Y%m%d_%H%M%S")
     os.makedirs(run_folder, exist_ok=True)
 
-    filename = "/home/annguyen/classes/artificial-life/difftaichi_modified/final/param-test.csv"
+    filename = "param-test.csv"
     snowflake_params = load_params_from_csv(filename)
 
     # # Print the loaded parameters
