@@ -104,3 +104,8 @@ Each generation folder contains the structure parameters and fitness scores for 
 5. The best configuration found is saved for future use
 
 This will run the physics simulation and display the structure's movement in real-time.
+
+## Demo
+
+https://github.com/user-attachments/assets/82d271bc-63bf-4bde-9e91-77852746568b
+
