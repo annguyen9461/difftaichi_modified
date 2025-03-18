@@ -9,7 +9,8 @@ from datetime import datetime
 import random
 import math
 import subprocess
-
+import gc  # For garbage collection
+import time  # For time.sleep()
 
 real = ti.f32
 ti.init(default_fp=real, arch=ti.gpu, flatten_if=True)
@@ -38,9 +39,10 @@ scalar = lambda: ti.field(dtype=real)
 vec = lambda: ti.Vector.field(dim, dtype=real)
 mat = lambda: ti.Matrix.field(dim, dim, dtype=real)
 
-actuator_id = ti.field(ti.i32)
-particle_type = ti.field(ti.i32)
-x, v = vec(), vec()
+actuator_id = ti.field(ti.i32)  # Remove shape parameter
+particle_type = ti.field(ti.i32)  # Remove shape parameter
+x = ti.Vector.field(dim, dtype=real)  # Remove shape parameter
+v = ti.Vector.field(dim, dtype=real)  # Remove shape parameter
 grid_v_in, grid_m_in = vec(), scalar()
 grid_v_out = vec()
 C, F = mat(), mat()
@@ -56,18 +58,52 @@ actuation = scalar()
 actuation_omega = 20
 act_strength = 4
 
+# Field declarations (without allocation)
+actuator_id = None
+particle_type = None
+x, v = None, None
+grid_v_in, grid_m_in = None, None
+grid_v_out = None
+C, F = None, None
+loss = None
+x_avg = None
+weights = None
+bias = None
+actuation = None
+
 def allocate_fields():
+    global actuator_id, particle_type, x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
+    
+    print(f"Allocating fields with n_particles={n_particles}, n_actuators={n_actuators}")
+    
+    # First create the fields
+    actuator_id = ti.field(dtype=ti.i32)
+    particle_type = ti.field(dtype=ti.i32)
+    x = ti.Vector.field(dim, dtype=real)
+    v = ti.Vector.field(dim, dtype=real)
+    C = ti.Matrix.field(dim, dim, dtype=real)
+    F = ti.Matrix.field(dim, dim, dtype=real)
+    grid_v_in = ti.Vector.field(dim, dtype=real)
+    grid_m_in = ti.field(dtype=real)
+    grid_v_out = ti.Vector.field(dim, dtype=real)
+    actuation = ti.field(dtype=real)
+    weights = ti.field(dtype=real)
+    bias = ti.field(dtype=real)
+    loss = ti.field(dtype=real)
+    x_avg = ti.Vector.field(dim, dtype=real)
+    
+    # Then place them
+    ti.root.dense(ti.i, n_particles).place(actuator_id, particle_type)
+    ti.root.dense(ti.ij, (max_steps, n_particles)).place(x, v, C, F)
+    ti.root.dense(ti.ij, n_grid).place(grid_v_in, grid_m_in, grid_v_out)
+    ti.root.dense(ti.ij, (max_steps, n_actuators)).place(actuation)
     ti.root.dense(ti.ij, (n_actuators, n_sin_waves)).place(weights)
     ti.root.dense(ti.i, n_actuators).place(bias)
-
-    ti.root.dense(ti.ij, (max_steps, n_actuators)).place(actuation)
-    ti.root.dense(ti.i, n_particles).place(actuator_id, particle_type)
-    ti.root.dense(ti.k, max_steps).dense(ti.l, n_particles).place(x, v, C, F)
-    ti.root.dense(ti.ij, n_grid).place(grid_v_in, grid_m_in, grid_v_out)
     ti.root.place(loss, x_avg)
-
+    
+    # Set up automatic differentiation
     ti.root.lazy_grad()
-
+    
 def reset_fields():
     x.fill(0)
     v.fill(0)
@@ -83,27 +119,133 @@ def reset_fields():
     x_avg[None] = [0, 0]
     ti.sync()
 
+import os
+import csv
+from datetime import datetime
+import re
+import glob
+
 def evaluate_fitness(params):
-    reset_fields()  # Clear all fields
-    scene = Scene()
-    create_snowflake_structure(scene, params)
-    
-    # Initialize particles
-    for i in range(scene.n_particles):
-        x[0, i] = scene.x[i]
-        F[0, i] = [[1, 0], [0, 1]]
-        actuator_id[i] = scene.actuator_id[i]
-        particle_type[i] = scene.particle_type[i]
-    
-    # Run simulation
+    """
+    Evaluate the fitness of a configuration by running the simulation and extracting the fitness score
+    from the latest view_<datetime> folder.
+    """
+    # Save the parameters to a temporary CSV file
+    save_params_to_csv(params, "param-test.csv")
+    print(f"Testing configuration: {params}")
+
+    # Define the path to view_snow2.py
+    view_snow2_path = "/home/annguyen/classes/artificial-life/difftaichi_modified/final/view_snow2.py"
+
     try:
-        forward()
+        # Run view_snow2.py as a subprocess
+        result = subprocess.run(
+            ["python", view_snow2_path],
+            check=True,  # Raise CalledProcessError if the subprocess returns a non-zero exit code
+            capture_output=True,
+            text=True
+        )
+        print("Configuration test passed.")
+
+        # Find the latest view_<datetime> folder
+        latest_view_folder = find_latest_view_folder()
+        if latest_view_folder:
+            # Extract fitness score from the run_data.csv file in the latest view folder
+            fitness_score = extract_fitness_from_csv(os.path.join(latest_view_folder, "run_data.csv"))
+            return fitness_score
+        else:
+            print("No view_<datetime> folder found.")
+            return -1000  # Return a low fitness score if no folder is found
+
+    except subprocess.CalledProcessError as e:
+        # Log the error and continue
+        print(f"Configuration test failed with error (exit code {e.returncode}):")
+        print(e.stderr)
+        return -1000  # Return a low fitness score for invalid configurations
     except Exception as e:
-        print(f"Simulation error: {e}")
-        return -1000  # Return a low fitness score for invalid structures
+        # Catch any other exceptions (e.g., file not found, permission errors)
+        print(f"Unexpected error while testing configuration: {e}")
+        return -1000  # Return a low fitness score for any other error
     
-    # Calculate fitness
-    return x_avg[None][0]  # Example fitness function
+def find_latest_view_folder():
+    """
+    Find the latest view_<datetime> folder in the current directory.
+    """
+    # Get all folders matching the view_<datetime> pattern
+    view_folders = glob.glob("view_*")
+    
+    # Filter folders that match the exact pattern
+    view_folders = [folder for folder in view_folders if re.match(r"view_\d{8}_\d{6}", folder)]
+    
+    if not view_folders:
+        return None  # No matching folders found
+    
+    # Sort folders by creation time (most recent first)
+    view_folders.sort(key=os.path.getmtime, reverse=True)
+    
+    # Return the latest folder
+    return view_folders[0]
+
+def extract_fitness_from_csv(csv_file):
+    """
+    Extract the final fitness score from the run_data.csv file.
+    """
+    try:
+        with open(csv_file, mode='r') as file:
+            reader = csv.reader(file)
+            next(reader)  # Skip the header row
+            last_row = None
+            for row in reader:
+                last_row = row  # Get the last row
+            if last_row:
+                return float(last_row[1])  # Return the fitness score from the last row
+            else:
+                print("No data found in run_data.csv")
+                return -1000  # Return a low fitness score if no data is found
+    except FileNotFoundError:
+        print(f"File {csv_file} not found.")
+        return -1000  # Return a low fitness score if the file is not found
+    except Exception as e:
+        print(f"Error reading {csv_file}: {e}")
+        return -1000  # Return a low fitness score for any other error
+
+
+def save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=None):
+    """
+    Save the configuration parameters and fitness score to a CSV file.
+    If generation is provided, it will be included in the CSV.
+    """
+    file_exists = os.path.isfile(fitness_csv_file)
+    with open(fitness_csv_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            # Write header if the file doesn't exist
+            header = list(params.keys()) + ["Fitness"]
+            if generation is not None:
+                header.append("Generation")
+            writer.writerow(header)
+        
+        # Write the parameters and fitness score
+        row = list(params.values()) + [fitness_score]
+        if generation is not None:
+            row.append(generation)
+        writer.writerow(row)
+
+def load_fitness_from_csv(fitness_csv_file):
+    """
+    Load previously evaluated configurations and their fitness scores from a CSV file.
+    """
+    evaluated_configs = {}
+    if os.path.isfile(fitness_csv_file):
+        with open(fitness_csv_file, mode='r') as file:
+            reader = csv.reader(file)
+            header = next(reader)  # Skip the header row
+            for row in reader:
+                params = {key: float(value) if "." in value else int(value) for key, value in zip(header[:-1], row[:-1])}
+                fitness_score = float(row[-1])
+                evaluated_configs[tuple(params.values())] = fitness_score
+    return evaluated_configs
+
 
 @ti.kernel
 def clear_grid():
@@ -388,12 +530,19 @@ class Scene:
                                         actuation_start + 1, ptype, params)
     def finalize(self):
         global n_particles, n_solid_particles, n_actuators
+        
+        # Cap particles if needed
+        if self.n_particles > MAX_PARTICLES:
+            print(f"Warning: Capping particles from {self.n_particles} to {MAX_PARTICLES}")
+            self.n_particles = MAX_PARTICLES
+            
         n_particles = self.n_particles
         n_solid_particles = self.n_solid_particles
-        n_actuators = self.n_actuators  # Update global n_actuators
-        print('n_particles', n_particles)
-        print('n_solid', n_solid_particles)
-        print('n_actuators', n_actuators)
+        n_actuators = max(1, self.n_actuators)  # Ensure at least one actuator
+        
+        print('n_particles:', n_particles)
+        print('n_solid_particles:', n_solid_particles)
+        print('n_actuators:', n_actuators)
     
     def set_offset(self, x, y):
         """Set position offset for the scene"""
@@ -441,21 +590,37 @@ def save_params_to_csv(params, filename):
 
 # Function to test a configuration by running view_snow2.py
 def test_configuration(params):
+    """
+    Test a configuration by running view_snow2.py as a subprocess.
+    If the subprocess errors out, log the error and return False.
+    """
+    # Save the parameters to a temporary CSV file
     save_params_to_csv(params, "param-test.csv")
     print(f"Testing configuration: {params}")
+
+    # Define the path to view_snow2.py in the main project directory
+    view_snow2_path = "/home/annguyen/classes/artificial-life/difftaichi_modified/final/view_snow2.py"
+
     try:
+        # Run view_snow2.py from the main project directory
         result = subprocess.run(
-            ["python", "view_snow2.py"],
-            check=True,
+            ["python", view_snow2_path],
+            check=True,  # Raise CalledProcessError if the subprocess returns a non-zero exit code
             capture_output=True,
             text=True
         )
         print("Configuration test passed.")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Configuration test failed: {e.stderr}")
+        # Log the error and continue
+        print(f"Configuration test failed with error (exit code {e.returncode}):")
+        print(e.stderr)
         return False
-
+    except Exception as e:
+        # Catch any other exceptions (e.g., file not found, permission errors)
+        print(f"Unexpected error while testing configuration: {e}")
+        return False
+    
 def load_params_from_csv(filename):
     """Load snowflake parameters from a CSV file."""
     params = {}
@@ -497,6 +662,9 @@ def mutate(params):
     return params
 
 def reset_fields():
+    if not hasattr(reset_fields, 'initialized'):
+        allocate_fields()  # Ensure fields are allocated before resetting
+        reset_fields.initialized = True
     """Reset Taichi fields to their initial state"""
     print("Resetting Taichi fields...")
     global x, v, C, F, grid_v_in, grid_m_in, grid_v_out, actuation, weights, bias, loss, x_avg
@@ -627,83 +795,121 @@ def load_parameters_from_csv(filename):
 #     # Rest of your simulation code...
 
 # Main function to generate and test configurations
+
 def main():
+    # Initialize the scene
+    scene = Scene()
+    params = randomize_snowflake_params()
+    create_snowflake_structure(scene, params)
+    scene.finalize()  # Ensure n_actuators is updated
+    
+    # Allocate fields after n_actuators is set
+    allocate_fields()
+    
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_folder = f"run_{current_time}"
     os.makedirs(run_folder, exist_ok=True)
     print(f"Created run folder: {run_folder}")
 
-    valid_configs = []
-    config_count = 0
+    fitness_csv_file = os.path.join(run_folder, "fitness.csv")
+    evaluated_configs = load_fitness_from_csv(fitness_csv_file)
 
-    while len(valid_configs) < 8:
-        config_count += 1
-        config_file = os.path.join(run_folder, f"config{config_count}.csv")
-        params = generate_parameters()
-        if test_configuration(params):
-            print(f"Configuration {config_count} is valid. Saving to {config_file}.")
-            valid_configs.append(params)
-            save_params_to_csv(params, config_file)
-        else:
-            print(f"Configuration {config_count} is invalid. Regenerating...")
+    population_size = 3
+    num_generations = 10
+    max_particles = 10000
 
-    print(f"Successfully generated {len(valid_configs)} valid configurations:")
-    for i, config in enumerate(valid_configs):
-        print(f"Config {i + 1}: {config}")
+    best_params = evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs)
 
-
-def evolutionary_optimization(population_size, num_generations, run_folder, max_particles):
-    population = [randomize_snowflake_params() for _ in range(population_size)]
-    all_fitness_scores = []
+def evolutionary_optimization(population_size, num_generations, run_folder, max_particles, fitness_csv_file, evaluated_configs):
+     # Generate initial valid configuration to set n_particles and n_actuators
+    scene = Scene()
+    params = randomize_snowflake_params()
+    create_snowflake_structure(scene, params)
+    scene.finalize()
     
-    for generation in range(num_generations):
+    # Allocate fields for the first generation
+    allocate_fields()
+
+    # Initialize population with valid configurations
+    population = []
+    gen_folder = os.path.join(run_folder, "gen_1")
+    os.makedirs(gen_folder, exist_ok=True)
+    print(f"Created generation folder: {gen_folder}")
+
+    # Generate the first generation with valid configurations
+    print("Generating first generation with valid configurations...")
+    while len(population) < population_size:
+        params = randomize_snowflake_params()
+        params_tuple = tuple(params.values())
+
+        # Skip evaluation if the configuration has already been evaluated
+        if params_tuple in evaluated_configs:
+            print(f"Configuration already evaluated. Fitness: {evaluated_configs[params_tuple]}")
+            population.append(params)
+            continue
+
+        if test_configuration(params):  # Only add if the configuration is valid
+            fitness_score = evaluate_fitness(params)
+            evaluated_configs[params_tuple] = fitness_score
+            save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=1)
+            population.append(params)
+            config_file = os.path.join(gen_folder, f"structure_{len(population)}.csv")
+            print(f"Saving configuration to: {config_file}")
+            try:
+                save_params_to_csv(params, config_file)
+                print(f"Successfully saved configuration to {config_file}")
+            except Exception as e:
+                print(f"Failed to save configuration to {config_file}: {e}")
+        else:
+            print("Configuration is invalid. Skipping...")
+
+    all_fitness_scores = []
+
+    for generation in range(1, num_generations):  # Start from generation 1
         print(f"Generation {generation + 1}/{num_generations}")
-        fitness_scores = []
         gen_folder = os.path.join(run_folder, f"gen_{generation + 1}")
         os.makedirs(gen_folder, exist_ok=True)
+        print(f"Created generation folder: {gen_folder}")
+
+        # Generate the next generation
+        population = generate_next_generation(run_folder, population_size)
 
         # Evaluate fitness for each individual in the population
+        fitness_scores = []
         for idx in range(population_size):
             print(f"Evaluating structure {idx + 1}/{population_size}")
             params = population[idx]
-            fitness = evaluate_fitness(params)
-            fitness_scores.append((fitness, params))
-            all_fitness_scores.append((fitness, params))
+            params_tuple = tuple(params.values())
 
-            # Save the configuration and fitness score
-            config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
-            save_params_to_csv(params, config_file)
-            with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
-                f.write(f"Structure {idx + 1}: {fitness}\n")
-            
-            # Clean up
-            import gc
+            # Skip evaluation if the configuration has already been evaluated
+            if params_tuple in evaluated_configs:
+                print(f"Configuration already evaluated. Fitness: {evaluated_configs[params_tuple]}")
+                fitness_scores.append((evaluated_configs[params_tuple], params))
+                all_fitness_scores.append((evaluated_configs[params_tuple], params))
+                continue
+
+            if test_configuration(params):  # Only evaluate if the configuration is valid
+                fitness_score = evaluate_fitness(params)
+                evaluated_configs[params_tuple] = fitness_score
+                save_fitness_to_csv(params, fitness_score, fitness_csv_file, generation=generation + 1)
+                fitness_scores.append((fitness_score, params))
+                all_fitness_scores.append((fitness_score, params))
+
+                config_file = os.path.join(gen_folder, f"structure_{idx + 1}.csv")
+                print(f"Saving configuration to: {config_file}")
+                try:
+                    save_params_to_csv(params, config_file)
+                    print(f"Successfully saved configuration to {config_file}")
+                except Exception as e:
+                    print(f"Failed to save configuration to {config_file}: {e}")
+
+                with open(os.path.join(gen_folder, "fitness_scores.txt"), "a") as f:
+                    f.write(f"Structure {idx + 1}: {fitness_score}\n")
+            else:
+                print(f"Configuration {idx + 1} is invalid. Skipping evaluation.")
+
             gc.collect()
-            import time
             time.sleep(0.2)
-
-        # Sort the population by fitness
-        fitness_scores.sort(key=lambda x: x[0], reverse=True)
-
-        # Remove the bottom 2 performers
-        population = [params for (fitness, params) in fitness_scores[:-2]]
-
-        # Select the top performers for crossover and mutation
-        top_performers = [params for (fitness, params) in fitness_scores[:population_size // 2]]
-
-        # Create new population through crossover and mutation
-        new_population = top_performers.copy()
-        while len(new_population) < population_size - 2:  # Leave space for 2 random individuals
-            parent1, parent2 = random.sample(top_performers, 2)
-            child = crossover(parent1, parent2)
-            child = mutate(child)
-            new_population.append(child)
-
-        # Add two random individuals to maintain diversity
-        new_population.append(randomize_snowflake_params())
-        new_population.append(randomize_snowflake_params())
-
-        population = new_population
 
         # Force CUDA synchronization and garbage collection between generations
         ti.sync()
@@ -713,10 +919,98 @@ def evolutionary_optimization(population_size, num_generations, run_folder, max_
     valid_scores = [(score, params) for score, params in all_fitness_scores if score > -1000]
     if not valid_scores:
         return randomize_snowflake_params()  # Return a random structure if all failed
-        
+
     # Sort by score only (not by the dictionary)
     valid_scores.sort(key=lambda x: x[0], reverse=True)
     return valid_scores[0][1]  # Return the params of the best structure
+
+def generate_next_generation(run_folder, population_size):
+    """
+    Generate the next generation of configurations based on the fitness scores in fitness.csv.
+    """
+    # Load fitness data
+    fitness_csv_file = os.path.join(run_folder, "fitness.csv")
+    evaluated_configs = load_fitness_from_csv(fitness_csv_file)
+
+    # Convert evaluated_configs into a list of (fitness, params) tuples
+    fitness_scores = []
+    for params_tuple, fitness in evaluated_configs.items():
+        # Convert the tuple back into a dictionary
+        params = {
+            "start_x": params_tuple[0],
+            "start_y": params_tuple[1],
+            "depth": params_tuple[2],
+            "branch_length": params_tuple[3],
+            "angle": params_tuple[4],
+            "thickness": params_tuple[5],
+            "stiffness": params_tuple[6],
+            "damping": params_tuple[7],
+            "num_sub_branches": params_tuple[8],
+            "sub_branch_angle": params_tuple[9],
+            "sub_branch_length_ratio": params_tuple[10],
+            "actuation_start": params_tuple[11],
+            "ptype": params_tuple[12],
+        }
+        fitness_scores.append((fitness, params))
+
+    # Sort the population by fitness (descending order)
+    fitness_scores.sort(key=lambda x: x[0], reverse=True)
+
+    # Drop the bottom 30% performers (rounding down)
+    num_to_drop = int(0.3 * population_size)
+    if num_to_drop > 0:
+        fitness_scores = fitness_scores[:-num_to_drop]
+
+    # Select the top performers for crossover and mutation
+    top_performers = [params for (fitness, params) in fitness_scores]
+
+    # Create new population through crossover and mutation
+    new_population = top_performers.copy()
+
+    # Add one new random configuration
+    max_attempts = 100  # Maximum attempts to find a valid configuration
+    attempts = 0
+    while attempts < max_attempts:
+        new_random = randomize_snowflake_params()
+        if test_configuration(new_random):
+            new_population.append(new_random)
+            break
+        attempts += 1
+    else:
+        print("Failed to generate a valid random configuration after maximum attempts.")
+
+    # Fill the remaining slots with mutated and crossover configurations
+    while len(new_population) < population_size:
+        max_attempts = 100  # Maximum attempts to find a valid configuration
+        attempts = 0
+        while attempts < max_attempts:
+            parent1, parent2 = random.sample(top_performers, 2)
+            child = crossover(parent1, parent2)
+            if test_configuration(child):
+                new_population.append(child)
+                break
+            attempts += 1
+        else:
+            print("Failed to generate a valid crossover configuration after maximum attempts.")
+            new_random = randomize_snowflake_params()
+            if test_configuration(new_random):
+                new_population.append(new_random)
+
+        attempts = 0
+        while attempts < max_attempts:
+            parent1, parent2 = random.sample(top_performers, 2)
+            child = mutate(parent1, parent2)
+            if test_configuration(child):
+                new_population.append(child)
+                break
+            attempts += 1
+        else:
+            print("Failed to generate a valid mutated configuration after maximum attempts.")
+            new_random = randomize_snowflake_params()
+            if test_configuration(new_random):
+                new_population.append(new_random)
+
+    return new_population
 
 def generate_parameters():
     params = {
